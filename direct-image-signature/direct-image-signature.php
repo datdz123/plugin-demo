@@ -26,6 +26,13 @@ function dis_enqueue_scripts() {
         return;
     }
     
+    global $post;
+    
+    // Kiểm tra xem có shortcode dis_invoice_list trên trang hiện tại không
+    $has_invoice_list_shortcode = is_a($post, 'WP_Post') && has_shortcode($post->post_content, 'dis_invoice_list');
+    
+    error_log('DIS: Checking for shortcode - has_invoice_list_shortcode: ' . ($has_invoice_list_shortcode ? 'true' : 'false'));
+    
     // Thêm Tailwind CSS từ CDN
     wp_enqueue_style('tailwind-css', 'https://cdn.tailwindcss.com', array(), '3.3.5');
     
@@ -35,24 +42,30 @@ function dis_enqueue_scripts() {
     // Thêm Fancybox CSS
     wp_enqueue_style('fancybox-css', 'https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css', array(), '5.0.0');
     
-    // Thêm Fabric.js (thư viện để vẽ chữ ký)
-    wp_enqueue_script('fabric-js', 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js', array(), '5.3.1', true);
-    
     // Thêm jQuery nếu chưa có
     wp_enqueue_script('jquery');
     
+    // Thêm jQuery UI cho chức năng kéo thả
+    wp_enqueue_script('jquery-ui-draggable');
+    wp_enqueue_script('jquery-ui-resizable');
+    
+    // Thêm Fabric.js (thư viện để vẽ chữ ký)
+    wp_enqueue_script('fabric-js', 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js', array('jquery'), '5.3.1', false);
+    
     // Thêm Fancybox JS
-    wp_enqueue_script('fancybox-js', 'https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js', array('jquery'), '5.0.0', true);
+    wp_enqueue_script('fancybox-js', 'https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js', array('jquery'), '5.0.0', false);
     
     // Thêm EXIF.js để xử lý hướng của ảnh
-    wp_enqueue_script('exif-js', 'https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js', array('jquery'), '2.3.0', true);
+    wp_enqueue_script('exif-js', 'https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js', array('jquery'), '2.3.0', false);
     
     // Thêm SignaturePad.js
-    wp_enqueue_script('signature-pad-js', 'https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js', array(), '4.1.5', true);
+    wp_enqueue_script('signature-pad-js', 'https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js', array('jquery'), '4.1.5', false);
     
     // JS chính
     wp_enqueue_script('dis-script', DIS_PLUGIN_URL . 'assets/js/direct-image-signature.js', array('jquery', 'fabric-js', 'fancybox-js', 'exif-js', 'signature-pad-js'), DIS_VERSION, true);
+    wp_enqueue_script('signature-script', DIS_PLUGIN_URL . 'assets/js/signature.js', array('jquery', 'fabric-js', 'fancybox-js', 'exif-js', 'signature-pad-js'), DIS_VERSION, true);
     
+    // Localize script cho direct-image-signature.js
     wp_localize_script('dis-script', 'dis_ajax', array(
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('dis_nonce'),
@@ -60,6 +73,31 @@ function dis_enqueue_scripts() {
         'is_admin' => is_admin() ? 'true' : 'false',
         'debug' => defined('WP_DEBUG') && WP_DEBUG ? 'true' : 'false'
     ));
+    
+    // Localize script cho signature.js
+    wp_localize_script('signature-script', 'dis_signature', array(
+        'ajaxurl' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('dis_signature_nonce'),
+        'i18n' => array(
+            'page' => __('Trang', 'direct-image-signature'),
+            'sign_here' => __('Ký tại đây', 'direct-image-signature'),
+            'apply' => __('Áp dụng', 'direct-image-signature'),
+            'clear' => __('Xóa', 'direct-image-signature'),
+            'cancel' => __('Hủy', 'direct-image-signature'),
+            'empty_signature' => __('Vui lòng ký trước khi áp dụng', 'direct-image-signature'),
+            'no_signatures' => __('Vui lòng ký ít nhất một chữ ký trước khi lưu', 'direct-image-signature'),
+            'error' => __('Đã xảy ra lỗi. Vui lòng thử lại.', 'direct-image-signature'),
+            'invoice_sign' => __('Ký hóa đơn', 'direct-image-signature'),
+            'upload_signature' => __('Tải lên chữ ký', 'direct-image-signature'),
+            'draw_signature' => __('Vẽ chữ ký', 'direct-image-signature'),
+            'save_signatures' => __('Lưu chữ ký', 'direct-image-signature'),
+            'no_images' => __('Không có ảnh nào cho hóa đơn này', 'direct-image-signature'),
+            'scale_up' => __('Phóng to', 'direct-image-signature'),
+            'scale_down' => __('Thu nhỏ', 'direct-image-signature')
+        )
+    ));
+    
+    error_log('DIS: Scripts and styles enqueued successfully');
 }
 add_action('wp_enqueue_scripts', 'dis_enqueue_scripts');
 
@@ -183,6 +221,69 @@ function dis_save_image() {
 add_action('wp_ajax_dis_save_image', 'dis_save_image');
 add_action('wp_ajax_nopriv_dis_save_image', 'dis_save_image');
 
+// Xử lý AJAX để lấy danh sách ảnh của hóa đơn
+function dis_get_invoice_images() {
+    // Kiểm tra nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'dis_signature_nonce')) {
+        wp_send_json_error('Lỗi bảo mật!');
+    }
+
+    // Kiểm tra invoice_id
+    if (!isset($_POST['invoice_id']) || empty($_POST['invoice_id'])) {
+        wp_send_json_error('Thiếu ID hóa đơn!');
+    }
+
+    $invoice_id = intval($_POST['invoice_id']);
+    $invoice = get_post($invoice_id);
+
+    if (!$invoice || $invoice->post_type !== 'dis_invoice') {
+        wp_send_json_error('Không tìm thấy hóa đơn!');
+    }
+
+    // Lấy danh sách ảnh từ ACF
+    $images = get_field('list_img', $invoice_id);
+    if (!$images || empty($images)) {
+        wp_send_json_error('Không có ảnh nào cho hóa đơn này!');
+    }
+
+    wp_send_json_success(array(
+        'images' => $images,
+        'title' => get_the_title($invoice_id)
+    ));
+}
+add_action('wp_ajax_dis_get_invoice_images', 'dis_get_invoice_images');
+add_action('wp_ajax_nopriv_dis_get_invoice_images', 'dis_get_invoice_images');
+
+// Xử lý AJAX để lưu chữ ký
+function dis_save_signatures() {
+    // Kiểm tra nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'dis_signature_nonce')) {
+        wp_send_json_error('Lỗi bảo mật!');
+    }
+
+    // Kiểm tra dữ liệu
+    if (!isset($_POST['invoice_id']) || empty($_POST['invoice_id']) || !isset($_POST['signatures'])) {
+        wp_send_json_error('Thiếu thông tin cần thiết!');
+    }
+
+    $invoice_id = intval($_POST['invoice_id']);
+    $signatures = json_decode(stripslashes($_POST['signatures']), true);
+
+    if (!$signatures) {
+        wp_send_json_error('Dữ liệu chữ ký không hợp lệ!');
+    }
+
+    // Lưu chữ ký vào metadata của hóa đơn
+    update_post_meta($invoice_id, '_dis_signatures', $signatures);
+    
+    // Cập nhật trạng thái hóa đơn thành "đã ký"
+    update_post_meta($invoice_id, '_dis_invoice_status', 'signed');
+
+    wp_send_json_success('Đã lưu chữ ký thành công!');
+}
+add_action('wp_ajax_dis_save_signatures', 'dis_save_signatures');
+add_action('wp_ajax_nopriv_dis_save_signatures', 'dis_save_signatures');
+
 // Tạo thư mục và file cần thiết khi kích hoạt plugin
 function dis_create_files_and_folders() {
     // Tạo thư mục temp trong uploads
@@ -262,6 +363,8 @@ function dis_add_to_footer() {
         return;
     }
     
+    error_log('DIS: Adding container to footer');
+    
     ?>
     <div id="dis-container" style="display: none;">
         <div class="dis-lightbox-toolbar bg-gray-800 p-4 flex flex-wrap items-center justify-center gap-4">
@@ -320,6 +423,10 @@ function dis_add_to_footer() {
             <p class="text-white">Đang xử lý...</p>
         </div>
     </div>
+    <script>
+    // Thêm script để kiểm tra xem div#dis-container đã được thêm vào trang chưa
+    console.log('DIS footer script: Container added to page');
+    </script>
     <?php
 }
 add_action('wp_footer', 'dis_add_to_footer');

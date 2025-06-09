@@ -36,6 +36,8 @@ class DIS_Invoice_List_Shortcode {
         global $post;
         
         if (is_a($post, 'WP_Post') && has_shortcode($post->post_content, 'dis_invoice_list')) {
+            error_log('DIS: Enqueuing scripts for invoice list shortcode - START');
+            
             // Thêm Tailwind CSS từ CDN
             wp_enqueue_style('tailwind-css', 'https://unpkg.com/tailwindcss@^2.2.19/dist/tailwind.min.css', array(), null);
             
@@ -51,19 +53,24 @@ class DIS_Invoice_List_Shortcode {
             wp_enqueue_script(
                 'signature-pad',
                 'https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js',
-                array(),
+                array('jquery'),
                 '4.0.0',
-                true
+                false // Thay đổi từ true thành false để tải trong head thay vì footer
             );
             
             // Thêm script xử lý ký
+            $timestamp = time(); // Sử dụng timestamp để tránh cache
+            error_log('DIS: Enqueuing signature.js with timestamp: ' . $timestamp);
+            
             wp_enqueue_script(
                 'dis-signature',
                 plugins_url('assets/js/signature.js', dirname(__FILE__)),
                 array('jquery', 'jquery-ui-draggable', 'jquery-ui-resizable', 'signature-pad', 'fancybox-js'),
-                '1.0.0',
+                $timestamp,
                 true
             );
+            
+            error_log('DIS: Localizing script with nonce and translations');
             
             // Localize script
             wp_localize_script('dis-signature', 'dis_signature', array(
@@ -80,11 +87,19 @@ class DIS_Invoice_List_Shortcode {
                     'error' => __('Đã xảy ra lỗi. Vui lòng thử lại.', 'direct-image-signature'),
                     'invoice_sign' => __('Ký hóa đơn', 'direct-image-signature'),
                     'upload_signature' => __('Tải lên chữ ký', 'direct-image-signature'),
-                    'draw_signature' => __('Vẽ chữ ký', 'direct-image-signature'),
+                    'draw_signature' => __('', 'direct-image-signature'),
                     'save_signatures' => __('Lưu chữ ký', 'direct-image-signature'),
-                    'no_images' => __('Không có ảnh nào cho hóa đơn này', 'direct-image-signature')
+                    'no_images' => __('Không có ảnh nào cho hóa đơn này', 'direct-image-signature'),
+                    'scale_up' => __('Phóng to', 'direct-image-signature'),
+                    'scale_down' => __('Thu nhỏ', 'direct-image-signature')
                 )
             ));
+            
+            // Thêm inline script để kiểm tra thư viện SignaturePad
+            wp_add_inline_script('signature-pad', 'console.log("SignaturePad library loaded in head");');
+            
+            // Thêm inline script để kiểm tra script signature.js
+            wp_add_inline_script('dis-signature', 'console.log("Inline script check: signature.js should be loaded");');
             
             // Thêm style cho popup
             wp_add_inline_style('tailwind-css', '
@@ -128,6 +143,8 @@ class DIS_Invoice_List_Shortcode {
                     background-color: #1d4ed8;
                 }
             ');
+            
+            error_log('DIS: Scripts and styles enqueued successfully - END');
         }
     }
 
@@ -136,54 +153,9 @@ class DIS_Invoice_List_Shortcode {
      */
     public function render_signature_popup() {
         if (!is_user_logged_in()) return;
-        ?>
-        <div id="dis-signature-popup" class="dis-signature-popup" style="display: none;">
-            <div class="min-h-screen px-4 py-8">
-                <div class="relative max-w-6xl mx-auto bg-white rounded-xl shadow-2xl">
-                    <!-- Header -->
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <div class="flex items-center justify-between">
-                            <h3 class="text-xl font-semibold text-gray-900" id="dis-popup-title">
-                                <?php echo esc_html__('Ký hóa đơn', 'direct-image-signature'); ?>
-                            </h3>
-                            <button type="button" class="dis-close-popup text-gray-400 hover:text-gray-500">
-                                <span class="sr-only"><?php echo esc_html__('Đóng', 'direct-image-signature'); ?></span>
-                                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Content -->
-                    <div class="px-6 py-4 max-h-[calc(100vh-200px)] overflow-y-auto">
-                        <div class="mb-4">
-                            <p class="text-gray-600">
-                                <?php echo esc_html__('Click vào vị trí bạn muốn ký trên hình ảnh để thêm chữ ký.', 'direct-image-signature'); ?>
-                            </p>
-                        </div>
-                        
-                        <!-- Image slider -->
-                        <div id="dis-image-slider" class="mb-4">
-                            <!-- Sẽ được điền bởi JavaScript -->
-                        </div>
-                    </div>
-
-                    <!-- Footer -->
-                    <div class="px-6 py-4 border-t border-gray-200">
-                        <div class="flex justify-end space-x-3">
-                            <button type="button" class="dis-close-popup inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                <?php echo esc_html__('Hủy', 'direct-image-signature'); ?>
-                            </button>
-                            <button type="button" id="dis-save-signatures" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                <?php echo esc_html__('Lưu chữ ký', 'direct-image-signature'); ?>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <?php
+        
+        // Không cần render popup vì sẽ sử dụng Fancybox
+        error_log('DIS: Skipping signature popup render, using Fancybox instead');
     }
 
     /**
@@ -438,78 +410,7 @@ class DIS_Invoice_List_Shortcode {
                                                                     "close",
                                                                 ]
                                                             },
-                                                            on: {
-                                                                ready: (fancybox) => {
-                                                                    // Thêm toolbar tùy chỉnh
-                                                                    if (!document.querySelector('.dis-signature-toolbar')) {
-                                                                        const toolbar = document.createElement('div');
-                                                                        toolbar.className = 'dis-signature-toolbar';
-                                                                        toolbar.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; background: #1e293b; color: white; padding: 10px; display: flex; justify-content: space-between; z-index: 10000;';
-                                                                        
-                                                                        toolbar.innerHTML = `
-                                                                            <div class="flex items-center space-x-4">
-                                                                                <button class="ve-chu-ky bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">Vẽ chữ ký</button>
-                                                                                <button class="tai-anh-chu-ky bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Tải ảnh chữ ký</button>
-                                                                                <button class="xoa-chu-ky bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">Xóa chữ ký</button>
-                                                                                <div class="flex items-center">
-                                                                                    <span class="mr-2">Kích thước:</span>
-                                                                                    <input type="range" min="50" max="200" value="100" class="kich-thuoc" style="width: 100px;">
-                                                                                </div>
-                                                                                <div class="flex items-center">
-                                                                                    <span class="mr-2">Màu sắc:</span>
-                                                                                    <input type="color" value="#000000" class="mau-sac">
-                                                                                </div>
-                                                                            </div>
-                                                                            <div>
-                                                                                <button class="luu-hinh-anh bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded" data-invoice-id="<?php echo esc_attr($invoice_id); ?>">Lưu hình ảnh</button>
-                                                                                <button class="huy bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Hủy</button>
-                                                                            </div>
-                                                                        `;
-                                                                        
-                                                                        document.body.appendChild(toolbar);
-                                                                        
-                                                                        // Xử lý sự kiện cho các nút
-                                                                        toolbar.querySelector('.ve-chu-ky').addEventListener('click', function() {
-                                                                            alert('Chức năng vẽ chữ ký sẽ được thêm vào đây');
-                                                                        });
-                                                                        
-                                                                        toolbar.querySelector('.tai-anh-chu-ky').addEventListener('click', function() {
-                                                                            const input = document.createElement('input');
-                                                                            input.type = 'file';
-                                                                            input.accept = 'image/*';
-                                                                            input.click();
-                                                                            
-                                                                            input.onchange = function(e) {
-                                                                                const file = e.target.files[0];
-                                                                                if (file) {
-                                                                                    const reader = new FileReader();
-                                                                                    reader.onload = function(e) {
-                                                                                        alert('Chức năng tải ảnh chữ ký sẽ được thêm vào đây');
-                                                                                    };
-                                                                                    reader.readAsDataURL(file);
-                                                                                }
-                                                                            };
-                                                                        });
-                                                                        
-                                                                        toolbar.querySelector('.huy').addEventListener('click', function() {
-                                                                            Fancybox.close();
-                                                                        });
-                                                                        
-                                                                        toolbar.querySelector('.luu-hinh-anh').addEventListener('click', function() {
-                                                                            const invoiceId = this.getAttribute('data-invoice-id');
-                                                                            alert('Đã lưu chữ ký cho hóa đơn #' + invoiceId);
-                                                                            Fancybox.close();
-                                                                        });
-                                                                    }
-                                                                },
-                                                                destroy: () => {
-                                                                    // Xóa toolbar khi đóng Fancybox
-                                                                    const toolbar = document.querySelector('.dis-signature-toolbar');
-                                                                    if (toolbar) {
-                                                                        toolbar.remove();
-                                                                    }
-                                                                }
-                                                            }
+                                                          
                                                         });
                                                     } else {
                                                         alert('<?php echo esc_js(__('Không có ảnh nào cho hóa đơn này', 'direct-image-signature')); ?>');

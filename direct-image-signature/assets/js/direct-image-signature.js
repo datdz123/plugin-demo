@@ -3,6 +3,7 @@
  */
 
 (function($) {
+    console.log('Direct Image Signature plugin loaded');
     'use strict';
     
     // Đối tượng chính của plugin
