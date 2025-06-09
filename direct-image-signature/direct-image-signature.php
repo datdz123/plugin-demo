@@ -68,6 +68,9 @@ require_once(DIS_PLUGIN_DIR . 'includes/class-user-management.php');
 require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-management.php');
 require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-handler.php');
 require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-tabs.php');
+require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-post-type.php');
+require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-list-shortcode.php');
+require_once(DIS_PLUGIN_DIR . 'includes/class-image-sign-shortcode.php');
 
 // Nạp cấu hình ACF
 require_once(DIS_PLUGIN_DIR . 'includes/acf-config.php');
@@ -238,6 +241,16 @@ function dis_init() {
     // Đăng ký shortcode cho dashboard hóa đơn
     if (!shortcode_exists('dis_invoice_dashboard')) {
         add_shortcode('dis_invoice_dashboard', array('DIS_Invoice_Management', 'render_invoice_dashboard'));
+    }
+    
+    // Đăng ký shortcode mới cho danh sách hóa đơn
+    if (!shortcode_exists('dis_invoice_list')) {
+        add_shortcode('dis_invoice_list', array('DIS_Invoice_List_Shortcode', 'render_invoice_list'));
+    }
+    
+    // Đăng ký shortcode mới cho chức năng ký ảnh
+    if (!shortcode_exists('dis_image_sign')) {
+        add_shortcode('dis_image_sign', array('DIS_Image_Sign_Shortcode', 'render_image_sign_tool'));
     }
 }
 add_action('init', 'dis_init');

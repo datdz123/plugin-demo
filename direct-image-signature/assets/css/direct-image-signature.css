@@ -304,7 +304,7 @@
 
 /* Nút ký hình ảnh */
 .dis-sign-button {
-    opacity: 0;
+    opacity: 1;
     transition: opacity 0.3s ease;
 }
 
