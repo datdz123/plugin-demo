@@ -295,4 +295,71 @@
 
 .canvas-container .signature-object.selected {
     border: 1px dashed #007bff;
+}
+
+/**
+ * CSS bổ sung cho plugin Direct Image Signature
+ * Sử dụng kết hợp với Tailwind CSS
+ */
+
+/* Nút ký hình ảnh */
+.dis-sign-button {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.wp-block-image:hover .dis-sign-button,
+.wp-caption:hover .dis-sign-button,
+figure:hover .dis-sign-button {
+    opacity: 1;
+}
+
+/* Animate hiệu ứng loading */
+@keyframes dis-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin {
+    animation: dis-spin 1s linear infinite;
+}
+
+/* Tạo hiệu ứng active cho các nút công cụ */
+.dis-button.active {
+    position: relative;
+}
+
+.dis-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40%;
+    height: 2px;
+    background-color: currentColor;
+    border-radius: 2px;
+}
+
+/* Custom cursors */
+.fabric-canvas-drawing {
+    cursor: crosshair !important;
+}
+
+/* Hỗ trợ mobile */
+@media (max-width: 640px) {
+    .dis-lightbox-toolbar {
+        flex-direction: column;
+    }
+    
+    .dis-upload-dialog-content,
+    .dis-result-dialog-content {
+        width: 90%;
+        max-width: none;
+    }
+    
+    #dis-image-canvas {
+        max-height: 70vh;
+    }
 } 

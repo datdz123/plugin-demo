@@ -1,580 +1,452 @@
-jQuery(document).ready(function($) {
-    // Biến toàn cục
-    let fabricCanvas;
-    let originalImageWidth, originalImageHeight;
-    let originalImage = null;
-    let originalSrc = '';
-    let currentImg = null;
-    let fancyboxInstance = null;
-    let signatureObject = null;
-    let isDrawingMode = true;
+/**
+ * JavaScript chính cho plugin Direct Image Signature
+ */
+
+(function($) {
+    'use strict';
     
-    // Thêm icon ký cho tất cả hình ảnh
-    function addSignatureIconToImages() {
-        console.log("Đang thêm icon ký vào hình ảnh...");
+    // Đối tượng chính của plugin
+    var DIS = {
+        canvas: null,
+        fabricCanvas: null,
+        signaturePad: null,
+        originalImageUrl: null,
+        currentSignature: null,
+        signatureScale: 1,
+        isDrawing: false,
         
-        // Tìm tất cả các hình ảnh trên trang và thêm icon ký
-        $('img').not('.dis-excluded, .dis-signature-icon-img, .dis-result-img').each(function(index) {
-            const img = $(this);
-            
-            // Gán ID cho hình ảnh
-            if (!img.attr('data-dis-index')) {
-                img.attr('data-dis-index', 'img-dis-' + index);
-            }
-            
-            // Chỉ xử lý nếu chưa có wrapper
-            if (!img.parent().hasClass('dis-image-wrapper')) {
-                // Tạo wrapper
-                img.wrap('<div class="dis-image-wrapper"></div>');
+        // Khởi tạo
+        init: function() {
+            this.setupLightbox();
+            this.setupEventListeners();
+            this.setupSignaturePad();
+        },
+        
+        // Thiết lập lightbox và công cụ ký
+        setupLightbox: function() {
+            // Tạo nút ký hình ảnh cho mỗi hình ảnh
+            $('.wp-block-image img, .wp-caption img, figure img').each(function() {
+                var $img = $(this);
+                var $container = $img.parent();
                 
-                // Tạo icon chữ ký
-                const iconHtml = `
-                    <div class="dis-signature-icon" data-img-id="${img.attr('data-dis-index')}">
-                        <img src="${dis_ajax.plugin_url}assets/images/signature-icon.png" alt="Ký" class="dis-signature-icon-img">
-                    </div>
-                `;
-                
-                // Thêm icon vào wrapper
-                img.parent().append(iconHtml);
-                
-                console.log("Đã thêm icon ký cho hình ảnh:", img.attr('src'));
-            }
-        });
-    }
-    
-    // Thêm icon ký cho tất cả hình ảnh (gọi lại nhiều lần để đảm bảo bắt được tất cả hình ảnh)
-    function initSignatureIcons() {
-        // Gọi ngay lần đầu
-        addSignatureIconToImages();
-        
-        // Gọi lại sau 1 giây
-        setTimeout(function() {
-            addSignatureIconToImages();
-        }, 1000);
-        
-        // Gọi lại sau 3 giây
-        setTimeout(function() {
-            addSignatureIconToImages();
-        }, 3000);
-    }
-    
-    // Khởi tạo canvas ký
-    function initSignatureCanvas(img) {
-        console.log("Khởi tạo canvas ký cho hình ảnh:", img.src);
-        
-        // Lưu hình ảnh gốc
-        currentImg = img;
-        originalSrc = img.src;
-        
-        // Tải hình ảnh và kiểm tra hướng EXIF
-        loadImageWithOrientation(originalSrc, function(correctedImg) {
-            originalImage = correctedImg;
-            originalImageWidth = correctedImg.width;
-            originalImageHeight = correctedImg.height;
-            
-            // Mở Fancybox với hình ảnh đã điều chỉnh hướng
-            openImageInFancybox(correctedImg.src);
-        });
-    }
-    
-    // Mở hình ảnh trong Fancybox
-    function openImageInFancybox(src) {
-        Fancybox.show([
-            {
-                src: src,
-                type: 'image'
-            }
-        ], {
-            on: {
-                done: (fancybox) => {
-                    fancyboxInstance = fancybox;
-                    setTimeout(function() {
-                        initCanvasOverImage();
-                    }, 500);
-                },
-                close: (fancybox) => {
-                    if (fabricCanvas) {
-                        fabricCanvas.dispose();
-                        fabricCanvas = null;
-                    }
-                    $('.dis-lightbox-canvas-wrapper').remove();
-                    $('#dis-container').hide();
+                // Chỉ thêm nút nếu chưa có
+                if ($container.find('.dis-sign-button').length === 0) {
+                    var $button = $('<button>', {
+                        'class': 'dis-sign-button bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm transition-colors',
+                        text: 'Ký hình ảnh này'
+                    });
+                    
+                    // Thêm nút vào container
+                    $container.css('position', 'relative');
+                    $container.append($button);
+                    
+                    // Định vị nút
+                    $button.css({
+                        'position': 'absolute',
+                        'bottom': '10px',
+                        'right': '10px',
+                        'z-index': 10
+                    });
                 }
-            }
-        });
-    }
-    
-    // Khởi tạo canvas phủ lên hình ảnh trong Fancybox
-    function initCanvasOverImage() {
-        // Hiển thị container công cụ
-        $('#dis-container').show();
-        
-        // Tìm hình ảnh trong Fancybox
-        const lightboxImg = $('.fancybox__content img');
-        if (!lightboxImg.length) {
-            console.error("Không tìm thấy hình ảnh trong Fancybox");
-            return;
-        }
-        
-        // Lấy kích thước và vị trí của hình ảnh
-        const imgWidth = lightboxImg.width();
-        const imgHeight = lightboxImg.height();
-        const imgOffset = lightboxImg.offset();
-        
-        console.log("Kích thước hình ảnh:", imgWidth, "x", imgHeight);
-        console.log("Vị trí hình ảnh:", imgOffset.top, imgOffset.left);
-        
-        // Tạo wrapper cho canvas
-        const canvasWrapper = $('<div class="dis-lightbox-canvas-wrapper"></div>');
-        canvasWrapper.css({
-            position: 'absolute',
-            top: imgOffset.top,
-            left: imgOffset.left,
-            width: imgWidth,
-            height: imgHeight,
-            zIndex: 9999
-        });
-        
-        // Thêm canvas vào wrapper
-        canvasWrapper.append('<canvas id="dis-canvas"></canvas>');
-        $('body').append(canvasWrapper);
-        
-        // Khởi tạo Fabric canvas
-        if (fabricCanvas) {
-            fabricCanvas.dispose();
-        }
-        
-        fabricCanvas = new fabric.Canvas('dis-canvas', {
-            selection: false
-        });
-        fabricCanvas.setWidth(imgWidth);
-        fabricCanvas.setHeight(imgHeight);
-        
-        // Đặt hình ảnh gốc làm nền
-        fabric.Image.fromURL(originalImage.src, function(img) {
-            fabricCanvas.setBackgroundImage(img, fabricCanvas.renderAll.bind(fabricCanvas), {
-                scaleX: imgWidth / originalImageWidth,
-                scaleY: imgHeight / originalImageHeight,
-                originX: 'left',
-                originY: 'top'
             });
-        });
+        },
         
-        // Thiết lập chế độ vẽ tự do ban đầu
-        setDrawingMode(true);
-        
-        console.log("Đã khởi tạo canvas thành công");
-    }
-    
-    // Thiết lập chế độ vẽ tay
-    function setDrawingMode(enable) {
-        if (!fabricCanvas) return;
-        
-        isDrawingMode = enable;
-        fabricCanvas.isDrawingMode = enable;
-        
-        if (enable) {
-            fabricCanvas.freeDrawingBrush.width = parseInt($('#dis-size').val());
-            fabricCanvas.freeDrawingBrush.color = $('#dis-color').val();
-            $('#dis-draw').addClass('active');
-            $('#dis-upload').removeClass('active');
-        } else {
-            $('#dis-draw').removeClass('active');
-        }
-    }
-    
-    // Thêm ảnh chữ ký vào canvas
-    function addSignatureImageToCanvas(imageUrl) {
-        if (!fabricCanvas) return;
-        
-        // Chuyển sang chế độ không vẽ tay
-        setDrawingMode(false);
-        $('#dis-upload').addClass('active');
-        
-        // Xóa ảnh chữ ký hiện tại (nếu có)
-        if (signatureObject) {
-            fabricCanvas.remove(signatureObject);
-        }
-        
-        // Thêm ảnh chữ ký mới
-        fabric.Image.fromURL(imageUrl, function(img) {
-            // Tính toán kích thước phù hợp
-            const maxWidth = fabricCanvas.getWidth() * 0.5;
-            const scale = maxWidth / img.width;
+        // Thiết lập các sự kiện
+        setupEventListeners: function() {
+            var self = this;
             
-            img.set({
-                left: fabricCanvas.getWidth() / 2 - (img.width * scale) / 2,
-                top: fabricCanvas.getHeight() / 2 - (img.height * scale) / 2,
-                scaleX: scale,
-                scaleY: scale,
-                cornerColor: 'rgba(0,0,255,0.5)',
-                cornerSize: 10,
-                transparentCorners: false
+            // Sự kiện khi nhấn nút ký hình ảnh
+            $(document).on('click', '.dis-sign-button', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                var $img = $(this).parent().find('img').first();
+                self.openImageEditor($img);
             });
             
-            // Cho phép di chuyển và thay đổi kích thước
-            img.setControlsVisibility({
-                mt: true,
-                mb: true,
-                ml: true,
-                mr: true,
-                bl: true,
-                br: true,
-                tl: true,
-                tr: true
+            // Chuyển đổi giữa các công cụ
+            $('#dis-draw, #dis-upload').on('click', function() {
+                $('#dis-draw, #dis-upload').removeClass('bg-blue-500 active').addClass('bg-gray-700');
+                $(this).removeClass('bg-gray-700').addClass('bg-blue-500 active');
+                
+                if ($(this).attr('id') === 'dis-draw') {
+                    $('.dis-upload-dialog').hide();
+                } else {
+                    $('.dis-upload-dialog').show();
+                }
             });
             
-            fabricCanvas.add(img);
-            fabricCanvas.setActiveObject(img);
-            signatureObject = img;
-            fabricCanvas.renderAll();
+            // Xóa chữ ký
+            $('#dis-clear').on('click', function() {
+                if (self.signaturePad) {
+                    self.signaturePad.clear();
+                }
+                self.removeSignature();
+            });
+            
+            // Thay đổi kích thước chữ ký
+            $('#dis-size').on('input', function() {
+                self.signatureScale = parseFloat($(this).val()) / 10;
+                self.updateSignatureObject();
+            });
+            
+            // Thay đổi màu chữ ký
+            $('#dis-color').on('input', function() {
+                if (self.signaturePad) {
+                    self.signaturePad.penColor = $(this).val();
+                }
+                self.updateSignatureColor($(this).val());
+            });
+            
+            // Lưu hình ảnh
+            $('#dis-save').on('click', function() {
+                self.saveImage();
+            });
+            
+            // Hủy bỏ
+            $('#dis-cancel').on('click', function() {
+                self.closeImageEditor();
+            });
+            
+            // Xử lý xem trước tệp upload
+            $('#dis-signature-file').on('change', function() {
+                var file = this.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        $('#dis-upload-preview-img').attr('src', e.target.result);
+                        $('.dis-upload-preview').show();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            // Xử lý nút upload
+            $('#dis-upload-submit').on('click', function() {
+                self.uploadSignature();
+            });
             
             // Đóng dialog upload
-            $('.dis-upload-dialog').hide();
-        });
-    }
-    
-    // Tải và điều chỉnh hướng hình ảnh dựa trên EXIF
-    function loadImageWithOrientation(src, callback) {
-        const img = new Image();
-        img.crossOrigin = "Anonymous";
-        
-        img.onload = function() {
-            // Tạo một đối tượng ảnh mới
-            const correctedImg = {
-                width: img.width,
-                height: img.height,
-                src: src
-            };
-            
-            // Đọc thông tin EXIF
-            EXIF.getData(img, function() {
-                const orientation = EXIF.getTag(this, "Orientation");
-                
-                // Nếu không có thông tin orientation, trả về ảnh gốc
-                if (!orientation) {
-                    callback(correctedImg);
-                    return;
-                }
-                
-                // Tạo canvas để điều chỉnh hướng
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                // Thiết lập kích thước canvas
-                canvas.width = img.width;
-                canvas.height = img.height;
-                
-                // Áp dụng phép biến đổi dựa trên orientation
-                switch (orientation) {
-                    case 2:
-                        ctx.transform(-1, 0, 0, 1, img.width, 0);
-                        break;
-                    case 3:
-                        ctx.transform(-1, 0, 0, -1, img.width, img.height);
-                        break;
-                    case 4:
-                        ctx.transform(1, 0, 0, -1, 0, img.height);
-                        break;
-                    case 5:
-                        canvas.width = img.height;
-                        canvas.height = img.width;
-                        ctx.transform(0, 1, 1, 0, 0, 0);
-                        break;
-                    case 6:
-                        canvas.width = img.height;
-                        canvas.height = img.width;
-                        ctx.transform(0, 1, -1, 0, img.height, 0);
-                        break;
-                    case 7:
-                        canvas.width = img.height;
-                        canvas.height = img.width;
-                        ctx.transform(0, -1, 1, 0, 0, img.width);
-                        break;
-                    case 8:
-                        canvas.width = img.height;
-                        canvas.height = img.width;
-                        ctx.transform(0, -1, -1, 0, img.height, img.width);
-                        break;
-                    default:
-                        // Không cần biến đổi
-                        break;
-                }
-                
-                // Vẽ ảnh lên canvas với phép biến đổi
-                ctx.drawImage(img, 0, 0);
-                
-                // Tạo URL cho ảnh đã điều chỉnh
-                const dataURL = canvas.toDataURL('image/jpeg');
-                
-                // Cập nhật thông tin ảnh
-                correctedImg.src = dataURL;
-                correctedImg.width = canvas.width;
-                correctedImg.height = canvas.height;
-                
-                callback(correctedImg);
+            $('#dis-upload-cancel').on('click', function() {
+                $('.dis-upload-dialog').hide();
+                $('#dis-draw').click();
             });
-        };
-        
-        img.src = src;
-    }
-    
-    // Upload ảnh chữ ký
-    function uploadSignatureImage() {
-        $('#dis-upload-submit').prop('disabled', true).text('Đang tải...');
-        
-        var formData = new FormData();
-        formData.append('action', 'dis_upload_signature');
-        formData.append('nonce', dis_ajax.nonce);
-        formData.append('signature_image', $('#dis-signature-file')[0].files[0]);
-        
-        $.ajax({
-            url: dis_ajax.ajax_url,
-            type: 'POST',
-            data: formData,
-            processData: false,
-            contentType: false,
-            success: function(response) {
-                $('#dis-upload-submit').prop('disabled', false).text('Chèn vào ảnh');
-                
-                if (response.success) {
-                    addSignatureImageToCanvas(response.data.url);
-                } else {
-                    alert('Lỗi: ' + response.data);
-                }
-            },
-            error: function() {
-                $('#dis-upload-submit').prop('disabled', false).text('Chèn vào ảnh');
-                alert('Đã xảy ra lỗi khi upload file chữ ký');
-            }
-        });
-    }
-    
-    // Xem trước file chữ ký
-    function handleSignatureFilePreview() {
-        var file = $('#dis-signature-file')[0].files[0];
-        
-        if (file) {
-            var reader = new FileReader();
-            reader.onload = function(e) {
-                $('#dis-upload-preview-img').attr('src', e.target.result);
-                $('.dis-upload-preview').show();
-            };
-            reader.readAsDataURL(file);
-        }
-    }
-    
-    // Xử lý upload ảnh chữ ký
-    function handleSignatureUpload() {
-        var file = $('#dis-signature-file')[0].files[0];
-        
-        if (!file) {
-            alert('Vui lòng chọn file ảnh chữ ký');
-            return;
-        }
-        
-        var fileType = file.type;
-        if (fileType !== 'image/jpeg' && fileType !== 'image/png' && fileType !== 'image/gif') {
-            alert('Vui lòng chọn file JPG, PNG hoặc GIF');
-            return;
-        }
-        
-        uploadSignatureImage();
-    }
-    
-    // Lưu hình ảnh đã ký
-    function saveSignedImage() {
-        // Hiển thị loading
-        $('.dis-loading').show();
-        
-        // Lấy dữ liệu hình ảnh từ canvas
-        const dataURL = fabricCanvas.toDataURL({
-            format: 'png',
-            quality: 1,
-            width: originalImageWidth,
-            height: originalImageHeight
-        });
-        
-        // Gửi dữ liệu hình ảnh lên server
-        $.ajax({
-            url: dis_ajax.ajax_url,
-            type: 'POST',
-            data: {
-                action: 'dis_save_image',
-                nonce: dis_ajax.nonce,
-                image_data: dataURL
-            },
-            success: function(response) {
-                $('.dis-loading').hide();
-                
-                if (response.success) {
-                    // Đóng Fancybox
-                    if (fancyboxInstance) {
-                        fancyboxInstance.close();
-                        fancyboxInstance = null;
-                    }
-                    
-                    // Xóa canvas
-                    if (fabricCanvas) {
-                        fabricCanvas.dispose();
-                        fabricCanvas = null;
-                    }
-                    $('.dis-lightbox-canvas-wrapper').remove();
-                    
-                    // Hiển thị kết quả
-                    showResultDialog(response.data.url);
-                } else {
-                    alert('Lỗi: ' + response.data);
-                }
-            },
-            error: function() {
-                $('.dis-loading').hide();
-                alert('Đã xảy ra lỗi khi lưu hình ảnh');
-            }
-        });
-    }
-    
-    // Hiển thị hộp thoại kết quả
-    function showResultDialog(imageUrl) {
-        $('#dis-result-img').attr('src', imageUrl);
-        $('#dis-result-link').attr('href', imageUrl);
-        $('#dis-result-fancy-link').attr('href', imageUrl);
-        $('.dis-result-dialog').fadeIn();
-    }
-    
-    // Gắn sự kiện cho các nút trong toolbar
-    function bindEvents() {
-        // Sự kiện click vào icon chữ ký
-        $(document).on('click', '.dis-signature-icon', function(e) {
-            e.preventDefault();
-            e.stopPropagation(); // Ngăn sự kiện lan tỏa
             
-            const imgId = $(this).data('img-id');
-            const img = $(`img[data-dis-index="${imgId}"]`)[0];
+            // Đóng dialog kết quả
+            $('#dis-result-close').on('click', function() {
+                $('.dis-result-dialog').hide();
+                self.closeImageEditor();
+            });
+        },
+        
+        // Thiết lập Signature Pad
+        setupSignaturePad: function() {
+            var canvas = document.getElementById('dis-signature-pad');
+            if (canvas) {
+                this.signaturePad = new SignaturePad(canvas, {
+                    backgroundColor: 'rgba(255, 255, 255, 0)',
+                    penColor: document.getElementById('dis-color').value,
+                    minWidth: 0.5,
+                    maxWidth: 2.5
+                });
+            }
+        },
+        
+        // Mở trình soạn thảo hình ảnh
+        openImageEditor: function($img) {
+            var self = this;
             
-            if (img) {
-                initSignatureCanvas(img);
-            }
-        });
-        
-        // Nút vẽ chữ ký
-        $(document).on('click', '#dis-draw', function() {
-            if (fabricCanvas) {
-                setDrawingMode(true);
-            }
-        });
-        
-        // Nút upload ảnh chữ ký
-        $(document).on('click', '#dis-upload', function() {
-            $('#dis-draw').removeClass('active');
-            $(this).addClass('active');
-            setDrawingMode(false);
-            $('.dis-upload-dialog').show();
-        });
-        
-        // Xem trước file upload
-        $(document).on('change', '#dis-signature-file', function() {
-            handleSignatureFilePreview();
-        });
-        
-        // Nút chèn ảnh chữ ký
-        $(document).on('click', '#dis-upload-submit', function() {
-            handleSignatureUpload();
-        });
-        
-        // Nút hủy upload
-        $(document).on('click', '#dis-upload-cancel', function() {
-            $('.dis-upload-dialog').hide();
-            $('#dis-signature-file').val('');
-            $('.dis-upload-preview').hide();
-        });
-        
-        // Nút xóa chữ ký
-        $(document).on('click', '#dis-clear', function() {
-            if (fabricCanvas) {
-                // Xóa tất cả các object
-                fabricCanvas.clear();
+            // Lưu URL hình ảnh gốc
+            self.originalImageUrl = $img.attr('src');
+            
+            // Hiển thị container
+            $('#dis-container').fadeIn();
+            
+            // Tạo canvas
+            if (!self.fabricCanvas) {
+                self.canvas = document.createElement('canvas');
+                self.canvas.id = 'dis-image-canvas';
+                self.canvas.className = 'max-w-full mx-auto border border-gray-300 shadow-md';
                 
-                // Thêm lại ảnh gốc
-                const lightboxImg = $('.fancybox__content img');
-                const imgWidth = lightboxImg.width();
-                const imgHeight = lightboxImg.height();
+                // Thêm canvas vào DOM trước các công cụ
+                $('.dis-lightbox-toolbar').before(self.canvas);
                 
-                fabric.Image.fromURL(originalImage.src, function(img) {
-                    fabricCanvas.setBackgroundImage(img, fabricCanvas.renderAll.bind(fabricCanvas), {
-                        scaleX: imgWidth / originalImageWidth,
-                        scaleY: imgHeight / originalImageHeight,
-                        originX: 'left',
-                        originY: 'top'
-                    });
+                // Khởi tạo Fabric.js canvas
+                self.fabricCanvas = new fabric.Canvas('dis-image-canvas');
+                
+                // Thiết lập sự kiện kéo thả
+                self.fabricCanvas.on('mouse:down', function(options) {
+                    if (options.target && options.target.type === 'image' && options.target.id === 'signature') {
+                        self.isDrawing = false;
+                    } else if (self.currentSignature && $('#dis-draw').hasClass('active')) {
+                        self.isDrawing = true;
+                        var pointer = self.fabricCanvas.getPointer(options.e);
+                        var signature = new fabric.Image(self.currentSignature, {
+                            left: pointer.x - (self.currentSignature.width * self.signatureScale) / 2,
+                            top: pointer.y - (self.currentSignature.height * self.signatureScale) / 2,
+                            scaleX: self.signatureScale,
+                            scaleY: self.signatureScale,
+                            id: 'signature',
+                            selectable: true,
+                            hasControls: true,
+                            hasBorders: true
+                        });
+                        self.fabricCanvas.add(signature);
+                        self.fabricCanvas.setActiveObject(signature);
+                        self.fabricCanvas.renderAll();
+                    }
+                });
+            }
+            
+            // Tải hình ảnh
+            self.loadImage();
+        },
+        
+        // Tải hình ảnh vào canvas
+        loadImage: function() {
+            var self = this;
+            
+            $('.dis-loading').show();
+            
+            fabric.Image.fromURL(self.originalImageUrl, function(img) {
+                // Điều chỉnh kích thước canvas
+                var maxWidth = window.innerWidth * 0.8;
+                var maxHeight = window.innerHeight * 0.6;
+                
+                var scale = 1;
+                if (img.width > maxWidth || img.height > maxHeight) {
+                    scale = Math.min(maxWidth / img.width, maxHeight / img.height);
+                }
+                
+                self.fabricCanvas.setWidth(img.width * scale);
+                self.fabricCanvas.setHeight(img.height * scale);
+                
+                // Đặt hình ảnh làm nền
+                img.set({
+                    scaleX: scale,
+                    scaleY: scale,
+                    selectable: false,
+                    evented: false,
+                    id: 'background'
                 });
                 
-                // Reset chữ ký object
-                signatureObject = null;
+                self.fabricCanvas.clear();
+                self.fabricCanvas.add(img);
+                self.fabricCanvas.renderAll();
+                
+                $('.dis-loading').hide();
+            });
+        },
+        
+        // Cập nhật đối tượng chữ ký
+        updateSignatureObject: function() {
+            var self = this;
+            
+            if (self.currentSignature && self.fabricCanvas) {
+                // Tìm đối tượng chữ ký trên canvas
+                var objects = self.fabricCanvas.getObjects();
+                var signature = objects.find(function(obj) {
+                    return obj.id === 'signature';
+                });
+                
+                if (signature) {
+                    signature.set({
+                        scaleX: self.signatureScale,
+                        scaleY: self.signatureScale
+                    });
+                    self.fabricCanvas.renderAll();
+                }
             }
-        });
+        },
         
-        // Điều chỉnh kích thước bút vẽ
-        $(document).on('input', '#dis-size', function() {
-            if (fabricCanvas && isDrawingMode) {
-                const size = parseInt($(this).val());
-                fabricCanvas.freeDrawingBrush.width = size;
+        // Cập nhật màu sắc chữ ký
+        updateSignatureColor: function(color) {
+            var self = this;
+            
+            if (self.fabricCanvas) {
+                // Tìm đối tượng chữ ký trên canvas
+                var objects = self.fabricCanvas.getObjects();
+                var signature = objects.find(function(obj) {
+                    return obj.id === 'signature';
+                });
+                
+                if (signature) {
+                    signature.filters = [new fabric.Image.filters.BlendColor({
+                        color: color,
+                        mode: 'tint',
+                        alpha: 1
+                    })];
+                    signature.applyFilters();
+                    self.fabricCanvas.renderAll();
+                }
             }
-        });
+        },
         
-        // Điều chỉnh màu bút vẽ
-        $(document).on('input', '#dis-color', function() {
-            if (fabricCanvas && isDrawingMode) {
-                const color = $(this).val();
-                fabricCanvas.freeDrawingBrush.color = color;
+        // Xóa chữ ký
+        removeSignature: function() {
+            var self = this;
+            
+            if (self.fabricCanvas) {
+                // Tìm và xóa đối tượng chữ ký
+                var objects = self.fabricCanvas.getObjects();
+                var signature = objects.find(function(obj) {
+                    return obj.id === 'signature';
+                });
+                
+                if (signature) {
+                    self.fabricCanvas.remove(signature);
+                    self.fabricCanvas.renderAll();
+                }
             }
-        });
+        },
         
-        // Nút lưu hình ảnh
-        $(document).on('click', '#dis-save', function() {
-            saveSignedImage();
-        });
-        
-        // Nút hủy
-        $(document).on('click', '#dis-cancel', function() {
-            if (fancyboxInstance) {
-                fancyboxInstance.close();
+        // Upload chữ ký
+        uploadSignature: function() {
+            var self = this;
+            var file = document.getElementById('dis-signature-file').files[0];
+            
+            if (!file) {
+                alert('Vui lòng chọn một tệp hình ảnh.');
+                return;
             }
-        });
+            
+            $('.dis-loading').show();
+            
+            var formData = new FormData();
+            formData.append('action', 'dis_upload_signature');
+            formData.append('nonce', dis_ajax.nonce);
+            formData.append('signature_image', file);
+            
+            $.ajax({
+                url: dis_ajax.ajax_url,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    $('.dis-loading').hide();
+                    $('.dis-upload-dialog').hide();
+                    
+                    if (response.success) {
+                        // Tải chữ ký vào canvas
+                        fabric.Image.fromURL(response.data.url, function(img) {
+                            self.currentSignature = img.getElement();
+                            
+                            var pointer = self.fabricCanvas.getPointer({ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 });
+                            var signature = new fabric.Image(self.currentSignature, {
+                                left: pointer.x - (img.width * self.signatureScale) / 2,
+                                top: pointer.y - (img.height * self.signatureScale) / 2,
+                                scaleX: self.signatureScale,
+                                scaleY: self.signatureScale,
+                                id: 'signature',
+                                selectable: true,
+                                hasControls: true,
+                                hasBorders: true
+                            });
+                            
+                            self.removeSignature();
+                            self.fabricCanvas.add(signature);
+                            self.fabricCanvas.setActiveObject(signature);
+                            self.fabricCanvas.renderAll();
+                        });
+                    } else {
+                        alert(response.data);
+                    }
+                },
+                error: function() {
+                    $('.dis-loading').hide();
+                    alert('Đã xảy ra lỗi. Vui lòng thử lại sau.');
+                }
+            });
+        },
         
-        // Nút đóng kết quả
-        $(document).on('click', '#dis-result-close', function() {
+        // Lưu hình ảnh
+        saveImage: function() {
+            var self = this;
+            
+            $('.dis-loading').show();
+            
+            // Ẩn viền và điều khiển của đối tượng chữ ký
+            var signature = self.fabricCanvas.getObjects().find(function(obj) {
+                return obj.id === 'signature';
+            });
+            
+            if (signature) {
+                signature.set({
+                    selectable: false,
+                    hasControls: false,
+                    hasBorders: false
+                });
+                self.fabricCanvas.discardActiveObject();
+                self.fabricCanvas.renderAll();
+            }
+            
+            // Lấy dữ liệu hình ảnh
+            var imageData = self.fabricCanvas.toDataURL({
+                format: 'png',
+                quality: 1
+            });
+            
+            // Gửi lên server
+            $.ajax({
+                url: dis_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'dis_save_image',
+                    nonce: dis_ajax.nonce,
+                    image_data: imageData
+                },
+                success: function(response) {
+                    $('.dis-loading').hide();
+                    
+                    if (response.success) {
+                        // Hiển thị hình ảnh kết quả
+                        $('#dis-result-img, #dis-result-fancy-link').attr('src', response.data.url);
+                        $('#dis-result-fancy-link, #dis-result-link').attr('href', response.data.url);
+                        $('.dis-result-dialog').show();
+                    } else {
+                        alert(response.data);
+                    }
+                },
+                error: function() {
+                    $('.dis-loading').hide();
+                    alert('Đã xảy ra lỗi. Vui lòng thử lại sau.');
+                }
+            });
+        },
+        
+        // Đóng trình soạn thảo hình ảnh
+        closeImageEditor: function() {
+            var self = this;
+            
+            // Xóa canvas
+            if (self.fabricCanvas) {
+                self.fabricCanvas.dispose();
+                self.fabricCanvas = null;
+            }
+            
+            if (self.canvas && self.canvas.parentNode) {
+                self.canvas.parentNode.removeChild(self.canvas);
+            }
+            
+            // Ẩn container
+            $('#dis-container').hide();
+            $('.dis-upload-dialog').hide();
             $('.dis-result-dialog').hide();
-        });
-    }
+            
+            // Reset các giá trị
+            self.originalImageUrl = null;
+            self.currentSignature = null;
+            self.signatureScale = 1;
+            $('#dis-size').val(10);
+            $('#dis-color').val('#000000');
+            $('#dis-draw').click();
+        }
+    };
     
-    // Khởi tạo plugin
-    function init() {
-        console.log("Khởi tạo plugin Direct Image Signature");
-        
-        // Thêm icon ký cho tất cả hình ảnh
-        initSignatureIcons();
-        
-        // Gắn sự kiện
-        bindEvents();
-        
-        // Kiểm tra và thêm lại icon khi tải thêm nội dung AJAX
-        $(document).ajaxComplete(function() {
-            console.log("AJAX hoàn tất, kiểm tra lại hình ảnh");
-            setTimeout(function() {
-                addSignatureIconToImages();
-            }, 500);
-        });
-        
-        // Kiểm tra lại sau khi trang đã tải hoàn tất
-        $(window).on('load', function() {
-            console.log("Trang đã tải hoàn tất, kiểm tra lại hình ảnh");
-            setTimeout(function() {
-                addSignatureIconToImages();
-            }, 1000);
-        });
-    }
+    // Khởi tạo khi trang đã tải xong
+    $(document).ready(function() {
+        DIS.init();
+    });
     
-    // Chạy khởi tạo
-    init();
-}); 
+})(jQuery);
