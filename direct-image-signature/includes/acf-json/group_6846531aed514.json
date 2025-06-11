@@ -12,16 +12,44 @@
             "required": 0,
             "conditional_logic": 0,
             "wrapper": {
-                "width": "",
+                "width": "30",
                 "class": "",
                 "id": ""
             },
             "role": "",
             "return_format": "id",
-            "multiple": 0,
+            "multiple": 1,
             "allow_null": 0,
             "bidirectional": 0,
             "bidirectional_target": []
+        },
+        {
+            "key": "field_684654843612b",
+            "label": "Danh sách hình ảnh hoá đơn",
+            "name": "list_img",
+            "aria-label": "",
+            "type": "gallery",
+            "instructions": "",
+            "required": 0,
+            "conditional_logic": 0,
+            "wrapper": {
+                "width": "70",
+                "class": "",
+                "id": ""
+            },
+            "return_format": "array",
+            "library": "all",
+            "min": "",
+            "max": "",
+            "min_width": "",
+            "min_height": "",
+            "min_size": "",
+            "max_width": "",
+            "max_height": "",
+            "max_size": "",
+            "mime_types": "",
+            "insert": "append",
+            "preview_size": "medium"
         }
     ],
     "location": [
@@ -30,6 +58,13 @@
                 "param": "post_type",
                 "operator": "==",
                 "value": "dis_invoice"
+            }
+        ],
+        [
+            {
+                "param": "post_type",
+                "operator": "==",
+                "value": "post"
             }
         ]
     ],
@@ -42,5 +77,5 @@
     "active": true,
     "description": "",
     "show_in_rest": 0,
-    "modified": 1749439428
+    "modified": 1749545621
 }

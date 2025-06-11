@@ -363,3 +363,8 @@ figure:hover .dis-sign-button {
         max-height: 70vh;
     }
 } 
+
+
+.swal2-popup.swal2-modal.\!overflow-visible.swal2-show{
+    width: 800px !important;
+}

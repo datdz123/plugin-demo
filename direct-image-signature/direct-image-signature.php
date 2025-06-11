@@ -28,10 +28,8 @@ function dis_enqueue_scripts() {
     
     global $post;
     
-    // Kiểm tra xem có shortcode dis_invoice_list trên trang hiện tại không
     $has_invoice_list_shortcode = is_a($post, 'WP_Post') && has_shortcode($post->post_content, 'dis_invoice_list');
     
-    error_log('DIS: Checking for shortcode - has_invoice_list_shortcode: ' . ($has_invoice_list_shortcode ? 'true' : 'false'));
     
     // Thêm Tailwind CSS từ CDN
     wp_enqueue_style('tailwind-css', 'https://cdn.tailwindcss.com', array(), '3.3.5');
@@ -62,17 +60,16 @@ function dis_enqueue_scripts() {
     wp_enqueue_script('signature-pad-js', 'https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js', array('jquery'), '4.1.5', false);
     
     // JS chính
-    wp_enqueue_script('dis-script', DIS_PLUGIN_URL . 'assets/js/direct-image-signature.js', array('jquery', 'fabric-js', 'fancybox-js', 'exif-js', 'signature-pad-js'), DIS_VERSION, true);
     wp_enqueue_script('signature-script', DIS_PLUGIN_URL . 'assets/js/signature.js', array('jquery', 'fabric-js', 'fancybox-js', 'exif-js', 'signature-pad-js'), DIS_VERSION, true);
     
-    // Localize script cho direct-image-signature.js
-    wp_localize_script('dis-script', 'dis_ajax', array(
-        'ajax_url' => admin_url('admin-ajax.php'),
-        'nonce' => wp_create_nonce('dis_nonce'),
-        'plugin_url' => DIS_PLUGIN_URL,
-        'is_admin' => is_admin() ? 'true' : 'false',
-        'debug' => defined('WP_DEBUG') && WP_DEBUG ? 'true' : 'false'
-    ));
+    // Thêm script xử lý đăng nhập/đăng ký
+    wp_enqueue_script('auth-script', DIS_PLUGIN_URL . 'assets/js/auth.js', array('jquery', 'sweetalert2-js'), DIS_VERSION, true);
+    
+    // Thêm SweetAlert2 CSS
+    wp_enqueue_style('sweetalert2-css', 'https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css', array(), '11.0.0');
+ 
+    // Thêm SweetAlert2 JS
+    wp_enqueue_script('sweetalert2-js', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', array('jquery'), '11.0.0', true);
     
     // Localize script cho signature.js
     wp_localize_script('signature-script', 'dis_signature', array(
@@ -97,7 +94,22 @@ function dis_enqueue_scripts() {
         )
     ));
     
-    error_log('DIS: Scripts and styles enqueued successfully');
+    // Localize script cho auth.js
+    wp_localize_script('auth-script', 'dis_auth', array(
+        'ajaxurl' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('dis_signature_nonce'),
+        'i18n' => array(
+            'login_success' => __('Đăng nhập thành công', 'direct-image-signature'),
+            'register_success' => __('Đăng ký thành công', 'direct-image-signature'),
+            'redirecting' => __('Đang chuyển hướng...', 'direct-image-signature'),
+            'login_error' => __('Lỗi đăng nhập', 'direct-image-signature'),
+            'register_error' => __('Lỗi đăng ký', 'direct-image-signature'),
+            'system_error' => __('Đã xảy ra lỗi', 'direct-image-signature'),
+            'try_again' => __('Vui lòng thử lại sau', 'direct-image-signature'),
+            'close' => __('Đóng', 'direct-image-signature'),
+            'try_again_btn' => __('Thử lại', 'direct-image-signature')
+        )
+    ));
 }
 add_action('wp_enqueue_scripts', 'dis_enqueue_scripts');
 
@@ -109,6 +121,7 @@ require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-tabs.php');
 require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-post-type.php');
 require_once(DIS_PLUGIN_DIR . 'includes/class-invoice-list-shortcode.php');
 require_once(DIS_PLUGIN_DIR . 'includes/class-image-sign-shortcode.php');
+require_once(DIS_PLUGIN_DIR . 'includes/class-ajax-handler.php');
 
 // Nạp cấu hình ACF
 require_once(DIS_PLUGIN_DIR . 'includes/acf-config.php');
@@ -258,29 +271,277 @@ add_action('wp_ajax_nopriv_dis_get_invoice_images', 'dis_get_invoice_images');
 function dis_save_signatures() {
     // Kiểm tra nonce
     if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'dis_signature_nonce')) {
-        wp_send_json_error('Lỗi bảo mật!');
+        wp_send_json_error(array('message' => __('Lỗi bảo mật!', 'direct-image-signature')));
+        return;
     }
 
     // Kiểm tra dữ liệu
-    if (!isset($_POST['invoice_id']) || empty($_POST['invoice_id']) || !isset($_POST['signatures'])) {
-        wp_send_json_error('Thiếu thông tin cần thiết!');
+    if (!isset($_POST['invoice_id'])) {
+        wp_send_json_error(array('message' => __('Thiếu ID hóa đơn.', 'direct-image-signature')));
+        return;
+    }
+    
+    if (!isset($_POST['merged_images'])) {
+        wp_send_json_error(array('message' => __('Thiếu dữ liệu hình ảnh đã ghép.', 'direct-image-signature')));
+        return;
     }
 
     $invoice_id = intval($_POST['invoice_id']);
-    $signatures = json_decode(stripslashes($_POST['signatures']), true);
+    $merged_images = $_POST['merged_images'];
+    $user_id = get_current_user_id();
 
-    if (!$signatures) {
-        wp_send_json_error('Dữ liệu chữ ký không hợp lệ!');
+    // Lấy danh sách người ký được phân công
+    $assigned_signers = get_field('signature', $invoice_id);
+    error_log('DIS: Assigned signers: ' . print_r($assigned_signers, true));
+    if (!is_array($assigned_signers)) {
+        $assigned_signers = array($assigned_signers);
+    }
+    // Loại bỏ các giá trị null hoặc rỗng
+    $assigned_signers = array_filter($assigned_signers);
+
+    // Kiểm tra quyền ký
+    if (!in_array($user_id, $assigned_signers)) {
+        wp_send_json_error(array('message' => __('Bạn không được phân quyền ký hóa đơn này.', 'direct-image-signature')));
+        return;
     }
 
-    // Lưu chữ ký vào metadata của hóa đơn
-    update_post_meta($invoice_id, '_dis_signatures', $signatures);
-    
-    // Cập nhật trạng thái hóa đơn thành "đã ký"
-    update_post_meta($invoice_id, '_dis_invoice_status', 'signed');
+    // Lấy danh sách người đã ký
+    $signed_users = get_post_meta($invoice_id, '_dis_signed_users', true);
+    if (!is_array($signed_users)) {
+        $signed_users = array();
+    }
 
-    wp_send_json_success('Đã lưu chữ ký thành công!');
+    // Thêm người dùng hiện tại vào danh sách đã ký
+    if (!in_array($user_id, $signed_users)) {
+        $signed_users[] = $user_id;
+    }
+
+    // Cập nhật danh sách người đã ký
+    update_post_meta($invoice_id, '_dis_signed_users', $signed_users);
+
+    // Xác định trạng thái mới
+    $total_signers = count($assigned_signers);
+    $total_signed = count($signed_users);
+
+    if ($total_signed === 0) {
+        $new_status = 'pending';
+    } elseif ($total_signers === 1 || $total_signed === $total_signers) {
+        // Nếu chỉ có 1 người ký hoặc tất cả đã ký -> done
+        $new_status = 'done';
+    } else {
+        // Có nhiều người ký và chưa ký đủ -> signed
+        $new_status = 'signed';
+    }
+    error_log('DIS: New status: ' . $new_status);
+    error_log('DIS: Total signers: ' . $total_signers);
+    error_log('DIS: Total signed: ' . $total_signed);
+
+    // Nếu dữ liệu là chuỗi JSON, chuyển đổi thành mảng
+    if (is_string($merged_images)) {
+        $merged_images = json_decode(stripslashes($merged_images), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            wp_send_json_error(array('message' => __('Lỗi xử lý dữ liệu hình ảnh đã ghép.', 'direct-image-signature')));
+            return;
+        }
+    }
+    
+    // Lưu các ảnh đã ghép
+    $signed_images = array();
+    
+    if (!is_array($merged_images) || empty($merged_images)) {
+        wp_send_json_error(array('message' => __('Không có dữ liệu hình ảnh đã ghép hợp lệ.', 'direct-image-signature')));
+        return;
+    }
+    
+    // Xử lý từng trang
+    foreach ($merged_images as $page_index => $merged_image_data) {
+        // Bỏ qua nếu không có dữ liệu
+        if (empty($merged_image_data)) continue;
+        
+        // Lưu hình ảnh đã ghép
+        $merged_image_id = save_signed_image($merged_image_data, $invoice_id, $page_index);
+        
+        // Thêm ID của hình ảnh vào mảng signed_images
+        if ($merged_image_id) {
+            $signed_images[] = $merged_image_id;
+        } else {
+            wp_send_json_error(array('message' => __('Không thể lưu hình ảnh đã ghép cho trang ' . ($page_index + 1), 'direct-image-signature')));
+            return;
+        }
+    }
+
+    if (empty($signed_images)) {
+        wp_send_json_error(array('message' => __('Không thể lưu hình ảnh đã ghép.', 'direct-image-signature')));
+        return;
+    }
+
+    // Cập nhật trạng thái hóa đơn
+    update_post_meta($invoice_id, '_dis_invoice_status', $new_status);
+
+    $signed_info = get_post_meta($invoice_id, '_dis_signed_info', true);
+    if (!is_array($signed_info)) {
+        $signed_info = array();
+    }
+    $signed_info[$user_id] = array(
+        'time' => current_time('mysql'),
+        'images' => $signed_images,
+        'total_signers' => $total_signers,
+        'total_signed' => $total_signed
+    );
+    update_post_meta($invoice_id, '_dis_signed_info', $signed_info);
+
+    wp_send_json_success(array(
+        'message' => __('Đã lưu chữ ký thành công.', 'direct-image-signature'),
+        'reload' => true,
+        'status' => $new_status,
+        'total_signers' => $total_signers,
+        'total_signed' => $total_signed
+    ));
 }
+
+// Hàm lưu ảnh chữ ký từ data URL
+function save_signature_image($data_url) {
+    // Kiểm tra data URL
+    if (strpos($data_url, 'data:image/') !== 0) {
+        error_log('DIS: Invalid data URL format');
+        return false;
+    }
+    
+    // Tách dữ liệu từ data URL
+    $parts = explode(',', $data_url);
+    if (count($parts) !== 2) {
+        error_log('DIS: Invalid data URL parts');
+        return false;
+    }
+    
+    try {
+        // Lấy loại file
+        preg_match('/data:image\/(.*);base64/', $parts[0], $matches);
+        if (empty($matches) || count($matches) < 2) {
+            error_log('DIS: Could not determine image type');
+            return false;
+        }
+        
+        $image_type = $matches[1];
+        
+        // Giải mã dữ liệu base64
+        $image_data = base64_decode($parts[1]);
+        if (!$image_data) {
+            error_log('DIS: Failed to decode base64 data');
+            return false;
+        }
+        
+        // Tạo tên file
+        $filename = 'signature-' . time() . '-' . mt_rand(1000, 9999) . '.' . $image_type;
+        
+        // Lưu file tạm thời
+        $upload_dir = wp_upload_dir();
+        $temp_file = $upload_dir['basedir'] . '/' . $filename;
+        $bytes_written = file_put_contents($temp_file, $image_data);
+        
+        if ($bytes_written === false) {
+            error_log('DIS: Failed to write image file');
+            return false;
+        }
+        
+        // Tạo attachment
+        $filetype = wp_check_filetype($filename, null);
+        $attachment = array(
+            'post_mime_type' => $filetype['type'],
+            'post_title' => sanitize_file_name($filename),
+            'post_content' => '',
+            'post_status' => 'inherit'
+        );
+        
+        $attach_id = wp_insert_attachment($attachment, $temp_file);
+        
+        if (is_wp_error($attach_id)) {
+            error_log('DIS: Failed to create attachment: ' . $attach_id->get_error_message());
+            return false;
+        }
+        
+        // Cập nhật metadata cho attachment
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        $attach_data = wp_generate_attachment_metadata($attach_id, $temp_file);
+        wp_update_attachment_metadata($attach_id, $attach_data);
+        
+        error_log('DIS: Successfully created signature image with ID: ' . $attach_id);
+        return $attach_id;
+    } catch (Exception $e) {
+        error_log('DIS: Exception while saving signature image: ' . $e->getMessage());
+        return false;
+    }
+}
+
+// Hàm lưu hình ảnh đã ghép chữ ký
+function save_signed_image($data_url, $invoice_id, $page_index) {
+    // Kiểm tra data URL
+    if (strpos($data_url, 'data:image/') !== 0) {
+        return false;
+    }
+    
+    // Tách dữ liệu từ data URL
+    $parts = explode(',', $data_url);
+    if (count($parts) !== 2) {
+        return false;
+    }
+    
+    try {
+        // Lấy loại file
+        preg_match('/data:image\/(.*);base64/', $parts[0], $matches);
+        if (empty($matches) || count($matches) < 2) {
+            return false;
+        }
+        
+        $image_type = $matches[1];
+        
+        // Giải mã dữ liệu base64
+        $image_data = base64_decode($parts[1]);
+        if (!$image_data) {
+            return false;
+        }
+        
+        // Tạo tên file
+        $filename = 'signed-image-' . $invoice_id . '-' . $page_index . '-' . time() . '.' . $image_type;
+        
+        // Lưu file tạm thời
+        $upload_dir = wp_upload_dir();
+        $temp_file = $upload_dir['basedir'] . '/' . $filename;
+        $bytes_written = file_put_contents($temp_file, $image_data);
+        
+        if ($bytes_written === false) {
+            return false;
+        }
+        
+        // Tạo attachment
+        $filetype = wp_check_filetype($filename, null);
+        $attachment = array(
+            'post_mime_type' => $filetype['type'],
+            'post_title' => sprintf(__('Signed Image - Invoice #%d - Page %d', 'direct-image-signature'), $invoice_id, $page_index + 1),
+            'post_content' => '',
+            'post_status' => 'inherit'
+        );
+        
+        $attach_id = wp_insert_attachment($attachment, $temp_file);
+        
+        if (is_wp_error($attach_id)) {
+            return false;
+        }
+        
+        // Cập nhật metadata cho attachment
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        $attach_data = wp_generate_attachment_metadata($attach_id, $temp_file);
+        wp_update_attachment_metadata($attach_id, $attach_data);
+        
+        return $attach_id;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+// Xử lý AJAX đăng nhập
+
+// Đăng ký hooks cho AJAX
 add_action('wp_ajax_dis_save_signatures', 'dis_save_signatures');
 add_action('wp_ajax_nopriv_dis_save_signatures', 'dis_save_signatures');
 
@@ -363,7 +624,6 @@ function dis_add_to_footer() {
         return;
     }
     
-    error_log('DIS: Adding container to footer');
     
     ?>
     <div id="dis-container" style="display: none;">
@@ -423,10 +683,7 @@ function dis_add_to_footer() {
             <p class="text-white">Đang xử lý...</p>
         </div>
     </div>
-    <script>
-    // Thêm script để kiểm tra xem div#dis-container đã được thêm vào trang chưa
-    console.log('DIS footer script: Container added to page');
-    </script>
+   
     <?php
 }
 add_action('wp_footer', 'dis_add_to_footer');

@@ -25,11 +25,10 @@ class DIS_Ajax_Handler {
         // Upload chữ ký mới
         add_action('wp_ajax_dis_upload_signature', array($this, 'upload_signature'));
         
-        // Lưu vị trí chữ ký trên hóa đơn
-        add_action('wp_ajax_dis_save_signatures', array($this, 'save_signatures'));
-        
         // Lấy danh sách ảnh hóa đơn
         add_action('wp_ajax_dis_get_invoice_images', array($this, 'get_invoice_images'));
+        
+ 
     }
 
     /**
@@ -103,149 +102,6 @@ class DIS_Ajax_Handler {
     }
 
     /**
-     * Lưu vị trí chữ ký trên hóa đơn
-     */
-    public function save_signatures() {
-        // Kiểm tra nonce
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'dis_signature_nonce')) {
-            error_log('DIS: Nonce verification failed');
-            wp_send_json_error(__('Lỗi bảo mật!', 'direct-image-signature'));
-        }
-
-        // Kiểm tra dữ liệu
-        if (!isset($_POST['invoice_id']) || !isset($_POST['signatures'])) {
-            error_log('DIS: Missing required data');
-            wp_send_json_error(__('Thiếu thông tin cần thiết.', 'direct-image-signature'));
-        }
-
-        $invoice_id = intval($_POST['invoice_id']);
-        $signatures = json_decode(stripslashes($_POST['signatures']), true);
-        $user_id = get_current_user_id();
-        
-        error_log('DIS: Processing signatures for invoice #' . $invoice_id . ' by user #' . $user_id);
-        error_log('DIS: Signatures data: ' . print_r($signatures, true));
-        
-        // Lưu các ảnh chữ ký
-        $processed_signatures = array();
-        
-        foreach ($signatures as $page_index => $page_signatures) {
-            if (empty($page_signatures)) continue;
-            
-            $processed_page_signatures = array();
-            
-            foreach ($page_signatures as $signature) {
-                // Lưu ảnh chữ ký vào media library
-                $signature_id = $this->save_signature_image($signature['data']);
-                
-                if ($signature_id) {
-                    $processed_page_signatures[] = array(
-                        'id' => $signature_id,
-                        'x' => $signature['x'],
-                        'y' => $signature['y'],
-                        'scale' => isset($signature['scale']) ? $signature['scale'] : 1.0
-                    );
-                    error_log('DIS: Saved signature image with ID: ' . $signature_id);
-                } else {
-                    error_log('DIS: Failed to save signature image');
-                }
-            }
-            
-            if (!empty($processed_page_signatures)) {
-                $processed_signatures[$page_index] = $processed_page_signatures;
-            }
-        }
-
-        // Lưu thông tin chữ ký
-        update_post_meta($invoice_id, '_dis_signatures', $processed_signatures);
-        update_post_meta($invoice_id, '_dis_signed_by', $user_id);
-        update_post_meta($invoice_id, '_dis_signed_date', current_time('mysql'));
-        update_post_meta($invoice_id, '_dis_invoice_status', 'signed');
-        
-        error_log('DIS: Successfully saved signatures for invoice #' . $invoice_id);
-
-        wp_send_json_success(__('Đã lưu chữ ký thành công.', 'direct-image-signature'));
-    }
-    
-    /**
-     * Lưu ảnh chữ ký từ data URL
-     * 
-     * @param string $data_url Data URL của ảnh chữ ký
-     * @return int|false ID của attachment hoặc false nếu lỗi
-     */
-    private function save_signature_image($data_url) {
-        // Kiểm tra data URL
-        if (strpos($data_url, 'data:image/') !== 0) {
-            error_log('DIS: Invalid data URL format');
-            return false;
-        }
-        
-        // Tách dữ liệu từ data URL
-        $parts = explode(',', $data_url);
-        if (count($parts) !== 2) {
-            error_log('DIS: Invalid data URL parts');
-            return false;
-        }
-        
-        try {
-            // Lấy loại file
-            preg_match('/data:image\/(.*);base64/', $parts[0], $matches);
-            if (empty($matches) || count($matches) < 2) {
-                error_log('DIS: Could not determine image type');
-                return false;
-            }
-            
-            $image_type = $matches[1];
-            
-            // Giải mã dữ liệu base64
-            $image_data = base64_decode($parts[1]);
-            if (!$image_data) {
-                error_log('DIS: Failed to decode base64 data');
-                return false;
-            }
-            
-            // Tạo tên file
-            $filename = 'signature-' . time() . '.' . $image_type;
-            
-            // Lưu file tạm thời
-            $upload_dir = wp_upload_dir();
-            $temp_file = $upload_dir['basedir'] . '/' . $filename;
-            $bytes_written = file_put_contents($temp_file, $image_data);
-            
-            if ($bytes_written === false) {
-                error_log('DIS: Failed to write image file');
-                return false;
-            }
-            
-            // Tạo attachment
-            $filetype = wp_check_filetype($filename, null);
-            $attachment = array(
-                'post_mime_type' => $filetype['type'],
-                'post_title' => sanitize_file_name($filename),
-                'post_content' => '',
-                'post_status' => 'inherit'
-            );
-            
-            $attach_id = wp_insert_attachment($attachment, $temp_file);
-            
-            if (is_wp_error($attach_id)) {
-                error_log('DIS: Failed to create attachment: ' . $attach_id->get_error_message());
-                return false;
-            }
-            
-            // Cập nhật metadata cho attachment
-            require_once(ABSPATH . 'wp-admin/includes/image.php');
-            $attach_data = wp_generate_attachment_metadata($attach_id, $temp_file);
-            wp_update_attachment_metadata($attach_id, $attach_data);
-            
-            error_log('DIS: Successfully created signature image with ID: ' . $attach_id);
-            return $attach_id;
-        } catch (Exception $e) {
-            error_log('DIS: Exception while saving signature image: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
      * Lấy danh sách ảnh hóa đơn
      */
     public function get_invoice_images() {
@@ -281,6 +137,8 @@ class DIS_Ajax_Handler {
             'images' => $images
         ));
     }
+
+    
 }
 
 // Khởi tạo lớp

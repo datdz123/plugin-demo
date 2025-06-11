@@ -70,10 +70,7 @@
     "has_archive": false,
     "has_archive_slug": "",
     "rewrite": {
-        "permalink_rewrite": "post_type_key",
-        "with_front": "1",
-        "feeds": "0",
-        "pages": "1"
+        "permalink_rewrite": "no_permalink"
     },
     "query_var": "post_type_key",
     "query_var_name": "",
@@ -81,5 +78,5 @@
     "delete_with_user": false,
     "register_meta_box_cb": "",
     "enter_title_here": "",
-    "modified": 1749439441
+    "modified": 1749543423
 }

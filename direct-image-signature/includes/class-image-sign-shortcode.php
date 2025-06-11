@@ -19,97 +19,78 @@ class DIS_Image_Sign_Shortcode {
      * Khởi tạo lớp
      */
     public function __construct() {
-        // Thêm shortcode hiển thị công cụ ký ảnh
-        add_shortcode('dis_image_sign', array($this, 'render_image_sign_tool'));
-        
-        // Thêm scripts và styles cho shortcode
-        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
+       
     }
 
     /**
      * Hiển thị công cụ ký ảnh
      */
-    public function render_image_sign_tool($atts) {
-        $atts = shortcode_atts(array(
-            'image_id' => 0,
-            'width' => '100%',
-            'height' => 'auto',
-        ), $atts, 'dis_image_sign');
+    public function render_image_sign_tool() {
+        if (is_admin()) {
+            return;
+        }
         
-        $image_id = intval($atts['image_id']);
-        $width = esc_attr($atts['width']);
-        $height = esc_attr($atts['height']);
         
-        ob_start();
-        
-        if ($image_id > 0) {
-            $image_url = wp_get_attachment_url($image_id);
-            $image_alt = get_post_meta($image_id, '_wp_attachment_image_alt', true);
-            
-            if ($image_url) {
-                ?>
-                <div class="dis-image-sign-container" style="position: relative; display: inline-block; margin-bottom: 20px;">
-                    <img src="<?php echo esc_url($image_url); ?>" alt="<?php echo esc_attr($image_alt); ?>" class="dis-signable-image" style="max-width: <?php echo $width; ?>; height: <?php echo $height; ?>;" />
-                    <button class="dis-sign-button bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm transition-colors !opacity-100" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
-                        <?php echo esc_html__('Ký hình ảnh này', 'direct-image-signature'); ?>
-                    </button>
+        ?>
+        <div id="dis-container" style="display: none;">
+            <div class="dis-lightbox-toolbar bg-gray-800 p-4 flex flex-wrap items-center justify-center gap-4">
+                <button id="dis-draw" class="dis-button bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 active">Vẽ chữ ký</button>
+                <button id="dis-upload" class="dis-button bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-600">Tải ảnh chữ ký</button>
+                <button id="dis-clear" class="dis-button bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-600">Xóa chữ ký</button>
+                <div class="dis-size-control flex items-center gap-2">
+                    <label for="dis-size" class="text-white">Kích thước:</label>
+                    <input type="range" id="dis-size" min="1" max="30" value="10" class="w-24">
                 </div>
-                <?php
-            } else {
-                echo '<p>' . esc_html__('Không tìm thấy hình ảnh.', 'direct-image-signature') . '</p>';
-            }
-        } else {
-            ?>
-            <div class="dis-image-uploader">
-                <h3><?php echo esc_html__('Tải lên hình ảnh để ký', 'direct-image-signature'); ?></h3>
-                <form id="dis-image-upload-form" enctype="multipart/form-data" class="mb-4">
-                    <div class="form-group mb-3">
-                        <label for="dis-upload-image" class="block mb-2"><?php echo esc_html__('Chọn hình ảnh', 'direct-image-signature'); ?></label>
-                        <input type="file" id="dis-upload-image" name="image" accept="image/*" class="border p-2 w-full rounded">
+                <div class="dis-color-control flex items-center gap-2">
+                    <label for="dis-color" class="text-white">Màu sắc:</label>
+                    <input type="color" id="dis-color" value="#000000">
+                </div>
+                <button id="dis-save" class="dis-button dis-save bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Lưu hình ảnh</button>
+                <button id="dis-cancel" class="dis-button bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-600">Hủy</button>
+            </div>
+            
+            <div class="dis-upload-dialog fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[9999]" style="display: none;">
+                <div class="dis-upload-dialog-content bg-white rounded-lg p-6 max-w-md w-full">
+                    <h3 class="text-xl font-bold mb-4 border-b pb-2">Tải lên ảnh chữ ký</h3>
+                    <form id="dis-upload-form" enctype="multipart/form-data">
+                        <div class="dis-upload-field mb-4">
+                            <label for="dis-signature-file" class="block mb-2 font-semibold">Chọn ảnh chữ ký (JPG, PNG, GIF):</label>
+                            <input type="file" id="dis-signature-file" name="signature_image" accept="image/jpeg, image/png, image/gif" class="border p-2 w-full rounded">
+                        </div>
+                        <div class="dis-upload-preview p-4 border rounded bg-gray-50" style="display: none;">
+                            <img id="dis-upload-preview-img" src="" alt="Xem trước" class="max-h-48 mx-auto">
+                        </div>
+                        <div class="dis-upload-buttons flex justify-end gap-3 mt-4">
+                            <button type="button" id="dis-upload-submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Chèn vào ảnh</button>
+                            <button type="button" id="dis-upload-cancel" class="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">Hủy</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="dis-result-dialog fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[9999]" style="display: none;">
+                <div class="dis-result-dialog-content bg-white rounded-lg p-6 max-w-lg w-full">
+                    <h3 class="text-xl font-bold mb-2">Hình ảnh đã được ký</h3>
+                    <p class="mb-4 text-gray-600">Bạn có thể tải xuống hoặc nhấn vào hình ảnh để xem.</p>
+                    <div class="dis-result-image p-4 border rounded bg-gray-50 mb-4 text-center">
+                        <a href="" id="dis-result-fancy-link" data-fancybox="results">
+                            <img id="dis-result-img" src="" alt="Hình ảnh đã ký" class="max-h-64 mx-auto">
+                        </a>
                     </div>
-                    <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md">
-                        <?php echo esc_html__('Tải lên', 'direct-image-signature'); ?>
-                    </button>
-                </form>
-                
-                <div id="dis-upload-preview" class="mt-4 hidden">
-                    <h4 class="mb-2"><?php echo esc_html__('Xem trước hình ảnh', 'direct-image-signature'); ?></h4>
-                    <div class="dis-image-sign-container" style="position: relative; display: inline-block;">
-                        <img src="" alt="<?php echo esc_attr__('Xem trước', 'direct-image-signature'); ?>" id="dis-preview-image" class="dis-signable-image" style="max-width: 100%; height: auto;" />
-                        <button class="dis-sign-button bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 !opacity-100 rounded-md shadow-sm transition-colors" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
-                            <?php echo esc_html__('Ký hình ảnh này', 'direct-image-signature'); ?>
-                        </button>
+                    <div class="dis-result-buttons flex justify-center gap-4">
+                        <a href="" id="dis-result-link" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600" download>Tải xuống</a>
+                        <button id="dis-result-close" class="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">Đóng</button>
                     </div>
                 </div>
             </div>
             
-            <script>
-            jQuery(document).ready(function($) {
-                $('#dis-image-upload-form').on('submit', function(e) {
-                    e.preventDefault();
-                    
-                    var fileInput = $('#dis-upload-image')[0];
-                    if (fileInput.files.length === 0) {
-                        alert('<?php echo esc_js(__('Vui lòng chọn một hình ảnh.', 'direct-image-signature')); ?>');
-                        return;
-                    }
-                    
-                    var file = fileInput.files[0];
-                    var reader = new FileReader();
-                    
-                    reader.onload = function(e) {
-                        $('#dis-preview-image').attr('src', e.target.result);
-                        $('#dis-upload-preview').removeClass('hidden');
-                    };
-                    
-                    reader.readAsDataURL(file);
-                });
-            });
-            </script>
-            <?php
-        }
-        
-        return ob_get_clean();
+            <div class="dis-loading fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-[9999]" style="display: none;">
+                <div class="dis-spinner w-12 h-12 border-4 border-t-blue-500 border-blue-200 rounded-full animate-spin mb-4"></div>
+                <p class="text-white">Đang xử lý...</p>
+            </div>
+        </div>
+      
+        <?php
     }
 
     /**

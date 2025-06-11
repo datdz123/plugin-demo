@@ -19,7 +19,6 @@ class DIS_Invoice_List_Shortcode {
      * Khởi tạo lớp
      */
     public function __construct() {
-        // Thêm shortcode hiển thị danh sách hóa đơn
         add_shortcode('dis_invoice_list', array($this, 'render_invoice_list'));
         
         // Thêm scripts và styles
@@ -40,6 +39,17 @@ class DIS_Invoice_List_Shortcode {
             
             // Thêm Tailwind CSS từ CDN
             wp_enqueue_style('tailwind-css', 'https://unpkg.com/tailwindcss@^2.2.19/dist/tailwind.min.css', array(), null);
+            
+            // Thêm jQuery UI CSS
+            wp_enqueue_style('jquery-ui', 'https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css', array(), '1.13.2');
+            
+            // Thêm CSS cho chức năng ký
+            wp_enqueue_style(
+                'dis-signature-css',
+                plugins_url('assets/css/signature.css', dirname(__FILE__)),
+                array('jquery-ui'),
+                filemtime(plugin_dir_path(dirname(__FILE__)) . 'assets/css/signature.css')
+            );
             
             // Thêm jQuery UI cho chức năng kéo thả và resize
             wp_enqueue_script('jquery-ui-draggable');
@@ -87,7 +97,7 @@ class DIS_Invoice_List_Shortcode {
                     'error' => __('Đã xảy ra lỗi. Vui lòng thử lại.', 'direct-image-signature'),
                     'invoice_sign' => __('Ký hóa đơn', 'direct-image-signature'),
                     'upload_signature' => __('Tải lên chữ ký', 'direct-image-signature'),
-                    'draw_signature' => __('', 'direct-image-signature'),
+                    'draw_signature' => __('Ký tại đây', 'direct-image-signature'),
                     'save_signatures' => __('Lưu chữ ký', 'direct-image-signature'),
                     'no_images' => __('Không có ảnh nào cho hóa đơn này', 'direct-image-signature'),
                     'scale_up' => __('Phóng to', 'direct-image-signature'),
@@ -144,7 +154,6 @@ class DIS_Invoice_List_Shortcode {
                 }
             ');
             
-            error_log('DIS: Scripts and styles enqueued successfully - END');
         }
     }
 
@@ -155,20 +164,13 @@ class DIS_Invoice_List_Shortcode {
         if (!is_user_logged_in()) return;
         
         // Không cần render popup vì sẽ sử dụng Fancybox
-        error_log('DIS: Skipping signature popup render, using Fancybox instead');
     }
 
     /**
      * Hiển thị danh sách hóa đơn
      */
     public function render_invoice_list() {
-        // Kiểm tra đăng nhập
-        if (!is_user_logged_in()) {
-            return '<div class="p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 mb-4">
-                <p>' . __('Bạn cần đăng nhập để xem hóa đơn.', 'direct-image-signature') . ' <a href="' . esc_url(site_url('/login/')) . '" class="text-blue-600 font-bold hover:underline">' . __('Đăng nhập', 'direct-image-signature') . '</a></p>
-            </div>';
-        }
-        
+      
         ob_start();
         
         // Thêm Tailwind CSS trực tiếp vào trang
@@ -178,11 +180,44 @@ class DIS_Invoice_List_Shortcode {
         $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'pending';
         
         ?>
+        <div class="px-4 mx-auto"> 
         <div class="bg-white rounded-lg shadow-lg overflow-hidden">
-            <div class="p-6 bg-gradient-to-r from-blue-500 to-blue-700">
-                <h2 class="text-2xl font-bold text-white"><?php echo esc_html__('Danh sách hóa đơn', 'direct-image-signature'); ?></h2>
-                <p class="text-blue-100 mt-2"><?php echo esc_html__('Quản lý và theo dõi tất cả hóa đơn của bạn', 'direct-image-signature'); ?></p>
+            <div class="p-6 bg-gradient-to-r from-blue-500 to-blue-700 flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-bold text-white"><?php echo esc_html__('Danh sách hóa đơn', 'direct-image-signature'); ?></h2>
+                    <p class="text-blue-100 mt-2"><?php echo esc_html__('Quản lý và theo dõi tất cả hóa đơn của bạn', 'direct-image-signature'); ?></p>
+                </div>
+                
+                <div class="relative">
+                    <button id="userDropdownBtn" class="flex items-center space-x-2 text-white hover:text-blue-100 focus:outline-none">
+                        <span class="font-medium"><?php echo esc_html(wp_get_current_user()->display_name); ?></span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    
+                    <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10">
+                        <a href="<?php echo wp_logout_url(home_url()); ?>" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                            <?php echo esc_html__('Đăng xuất', 'direct-image-signature'); ?>
+                        </a>
+                    </div>
+                </div>
             </div>
+
+            <script>
+            jQuery(document).ready(function($) {
+                $('#userDropdownBtn').click(function(e) {
+                    e.stopPropagation();
+                    $('#userDropdown').toggleClass('hidden');
+                });
+
+                $(document).click(function(e) {
+                    if (!$(e.target).closest('#userDropdownBtn, #userDropdown').length) {
+                        $('#userDropdown').addClass('hidden');
+                    }
+                });
+            });
+            </script>
             
             <!-- Tabs -->
             <div class="tabs-container">
@@ -204,7 +239,7 @@ class DIS_Invoice_List_Shortcode {
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
-                            <?php echo esc_html__('Hóa đơn của tôi', 'direct-image-signature'); ?>
+                            <?php echo esc_html__('Hóa đơn đã hoàn thành ', 'direct-image-signature'); ?>
                         </a>
                     </nav>
                 </div>
@@ -229,6 +264,7 @@ class DIS_Invoice_List_Shortcode {
                 </div>
             </div>
         </div>
+        </div>
         <?php
         
         return ob_get_clean();
@@ -238,16 +274,56 @@ class DIS_Invoice_List_Shortcode {
      * Hiển thị hóa đơn chờ ký
      */
     private function render_pending_invoices() {
+        $current_user = wp_get_current_user();
+        $is_admin = in_array('administrator', $current_user->roles);
+        $current_user_id = get_current_user_id();
+
+        if (!$is_admin) {
+            // User thường chỉ thấy hóa đơn họ được phân công ký và chưa ký
+            $meta_query = array(
+                'relation' => 'AND',
+                // Được phân công ký
+                array(
+                    'key' => 'signature',
+                    'value' => $current_user_id,
+                    'compare' => 'LIKE'
+                ),
+                array(
+                    'relation' => 'OR',
+                    // Chưa có ai ký
+                    array(
+                        'key' => '_dis_signed_users',
+                        'compare' => 'NOT EXISTS'
+                    ),
+                    // Hoặc user này chưa ký
+                    array(
+                        'key' => '_dis_signed_users',
+                        'value' => $current_user_id,
+                        'compare' => 'NOT LIKE'
+                    )
+                ),
+                // Trạng thái là pending hoặc signed
+                array(
+                    'key' => '_dis_invoice_status',
+                    'value' => array('pending', 'signed'),
+                    'compare' => 'IN'
+                )
+            );
+        } else {
+            // Admin thấy tất cả hóa đơn chưa hoàn thành
+            $meta_query = array(
+                array(
+                    'key' => '_dis_invoice_status',
+                    'value' => array('pending', 'signed'),
+                    'compare' => 'IN'
+                )
+            );
+        }
+
         $args = array(
             'post_type' => 'dis_invoice',
             'posts_per_page' => -1,
-            'meta_query' => array(
-                array(
-                    'key' => '_dis_invoice_status',
-                    'value' => 'pending',
-                    'compare' => '='
-                )
-            )
+            'meta_query' => $meta_query
         );
         
         $this->display_invoices($args, 'pending');
@@ -257,32 +333,94 @@ class DIS_Invoice_List_Shortcode {
      * Hiển thị hóa đơn đã ký
      */
     private function render_signed_invoices() {
-        $args = array(
-            'post_type' => 'dis_invoice',
-            'posts_per_page' => -1,
-            'meta_query' => array(
+        $current_user = wp_get_current_user();
+        $is_admin = in_array('administrator', $current_user->roles);
+        $current_user_id = get_current_user_id();
+
+        if (!$is_admin) {
+            // User thường chỉ thấy hóa đơn họ đã ký
+            $meta_query = array(
+                'relation' => 'AND',
+                // Được phân công ký
+                array(
+                    'key' => 'signature',
+                    'value' => $current_user_id,
+                    'compare' => 'LIKE'
+                ),
+                // Đã ký
+                array(
+                    'key' => '_dis_signed_users',
+                    'value' => $current_user_id,
+                    'compare' => 'LIKE'
+                ),
+                // Trạng thái hóa đơn là signed
                 array(
                     'key' => '_dis_invoice_status',
                     'value' => 'signed',
                     'compare' => '='
                 )
-            )
+            );
+        } else {
+            // Admin thấy tất cả hóa đơn đã ký một phần
+            $meta_query = array(
+                array(
+                    'key' => '_dis_invoice_status',
+                    'value' => 'signed',
+                    'compare' => '='
+                )
+            );
+        }
+
+        $args = array(
+            'post_type' => 'dis_invoice',
+            'posts_per_page' => -1,
+            'meta_query' => $meta_query
         );
         
         $this->display_invoices($args, 'signed');
     }
 
     /**
-     * Hiển thị hóa đơn của tôi
+     * Hiển thị hóa đơn đã hoàn thành
      */
     private function render_my_invoices() {
+        $current_user = wp_get_current_user();
+        $is_admin = in_array('administrator', $current_user->roles);
+        $current_user_id = get_current_user_id();
+
+        if (!$is_admin) {
+            // User thường chỉ thấy hóa đơn đã hoàn thành mà họ tham gia ký
+            $meta_query = array(
+                'relation' => 'AND',
+                array(
+                    'key' => 'signature',
+                    'value' => serialize((string)$current_user_id),
+                    'compare' => 'LIKE'
+                ),
+                array(
+                    'key' => '_dis_invoice_status',
+                    'value' => 'done',
+                    'compare' => '='
+                )
+            );
+        } else {
+            // Admin thấy tất cả hóa đơn đã hoàn thành
+            $meta_query = array(
+                array(
+                    'key' => '_dis_invoice_status',
+                    'value' => 'done',
+                    'compare' => '='
+                )
+            );
+        }
+
         $args = array(
             'post_type' => 'dis_invoice',
             'posts_per_page' => -1,
-            'author' => get_current_user_id()
+            'meta_query' => $meta_query
         );
         
-        $this->display_invoices($args, 'my');
+        $this->display_invoices($args, 'done');
     }
 
     /**
@@ -331,7 +469,7 @@ class DIS_Invoice_List_Shortcode {
                         </svg>
                     </div>
                     <div>
-                        <h3 class="text-lg font-semibold text-yellow-800"><?php echo esc_html__('Hóa đơn của tôi', 'direct-image-signature'); ?></h3>
+                        <h3 class="text-lg font-semibold text-yellow-800"><?php echo esc_html__('Hóa đơn đã hoàn thành ', 'direct-image-signature'); ?></h3>
                         <p class="text-yellow-700">
                             <?php echo esc_html__('Đây là danh sách các hóa đơn bạn đã tạo. Bạn có thể quản lý và theo dõi trạng thái của chúng.', 'direct-image-signature'); ?>
                         </p>
@@ -339,6 +477,13 @@ class DIS_Invoice_List_Shortcode {
                 </div>
             <?php endif; ?>
             
+            <?php if(!is_user_logged_in()): ?>
+              <div class="flex flex-col items-center justify-center p-8 text-center bg-gray-50 rounded-lg border border-gray-200">
+                    <p class="text-gray-600 text-lg"><?php echo esc_html__('Bạn cần đăng nhập để xem hóa đơn.', 'direct-image-signature'); ?></p>
+                    <a href="#" class="dis-login-link text-blue-600 font-bold hover:underline"><?php echo esc_html__('Đăng nhập', 'direct-image-signature'); ?></a>
+                </div>
+            <?php else: ?>
+           
             <?php if ($invoices->have_posts()): ?>
                 <div class="space-y-4">
                     <?php while ($invoices->have_posts()): $invoices->the_post(); 
@@ -365,19 +510,98 @@ class DIS_Invoice_List_Shortcode {
                                             <?php echo get_the_date(); ?>
                                         </span>
                                         <span class="flex items-center">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                            <?php echo get_the_author(); ?>
+                                            <?php 
+                                            $signature_users = get_field('signature', $invoice_id);
+                                            $signed_users = get_post_meta($invoice_id, '_dis_signed_users', true);
+                                            $invoice_status = get_post_meta($invoice_id, '_dis_invoice_status', true);
+                                            $current_user_id = get_current_user_id();
+                                            
+                                            if (!is_array($signature_users)) {
+                                                $signature_users = array($signature_users);
+                                            }
+                                            $signature_users = array_filter($signature_users); // Loại bỏ giá trị null/rỗng
+                                            
+                                            if (!is_array($signed_users)) {
+                                                $signed_users = array();
+                                            }
+
+                                            if (!empty($signature_users)) {
+                                                echo '<div class="flex flex-col space-y-2 mt-2">';
+                                                echo '<div class="text-sm font-medium text-gray-700">Danh sách người ký:</div>';
+                                                echo '<div class="grid grid-cols-1 gap-2">';
+                                                
+                                                foreach ($signature_users as $signer_id) {
+                                                    $user_info = get_userdata($signer_id);
+                                                    if ($user_info) {
+                                                        $has_signed = in_array($signer_id, $signed_users);
+                                                        $current_user = $signer_id == get_current_user_id();
+                                                        
+                                                        echo '<div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg ' . ($current_user ? 'border border-blue-200' : '') . '">';
+                                                        
+                                                        // Tên người ký và trạng thái
+                                                        echo '<div class="flex items-center gap-2">';
+                                                        if ($has_signed) {
+                                                            echo '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+                                                            echo '<span class="text-sm text-gray-700">' . esc_html($user_info->display_name) . ' <span class="text-green-600 text-xs">(Đã ký)</span></span>';
+                                                        } else {
+                                                            echo '<svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+                                                            echo '<span class="text-sm text-gray-700">' . esc_html($user_info->display_name) . ' <span class="text-yellow-600 text-xs">(Chưa ký)</span></span>';
+                                                        }
+                                                        echo '</div>';
+                                                        
+                                                        // Thời gian ký (nếu đã ký)
+                                                        if ($has_signed) {
+                                                            $signed_info = get_post_meta($invoice_id, '_dis_signed_info', true);
+                                                            if (isset($signed_info[$signer_id]['time'])) {
+                                                                $sign_time = new DateTime($signed_info[$signer_id]['time']);
+                                                                echo '<span class="text-xs text-gray-500">' . $sign_time->format('d/m/Y H:i') . '</span>';
+                                                            }
+                                                        }
+                                                        
+                                                        echo '</div>';
+                                                    }
+                                                }
+                                                
+                                                echo '</div>';
+                                                
+                                                // Hiển thị tiến độ ký
+                                                $total_signers = count($signature_users);
+                                                $total_signed = count($signed_users);
+                                                $progress = ($total_signed / $total_signers) * 100;
+                                                
+                                                echo '<div class="mt-2">';
+                                                echo '<div class="flex justify-between text-xs text-gray-600 mb-1">';
+                                                echo '<span>Tiến độ ký: ' . $total_signed . '/' . $total_signers . '</span>';
+                                                echo '<span>' . round($progress) . '%</span>';
+                                                echo '</div>';
+                                                echo '<div class="w-full bg-gray-200 rounded-full h-2">';
+                                                echo '<div class="bg-blue-600 h-2 rounded-full" style="width: ' . $progress . '%"></div>';
+                                                echo '</div>';
+                                                echo '</div>';
+                                                
+                                                echo '</div>';
+                                            }
+                                            ?>
                                         </span>
                                     </div>
                                 </div>
                                 <div class="flex flex-col items-end space-y-2">
-                                    <span class="px-3 py-1 rounded-full text-sm <?php echo $invoice_status === 'signed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'; ?>">
-                                        <?php echo $invoice_status === 'signed' ? esc_html__('Đã ký', 'direct-image-signature') : esc_html__('Chờ ký', 'direct-image-signature'); ?>
+                                    <?php
+                                    // Xác định trạng thái cho người dùng hiện tại
+                                    $user_status = in_array($current_user_id, $signed_users) ? 'signed' : 'pending';
+                                    $status_class = $user_status === 'signed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800';
+                                    $status_text = $user_status === 'signed' ? esc_html__('Đã ký', 'direct-image-signature') : esc_html__('Chờ ký', 'direct-image-signature');
+                                    
+                                    if ($invoice_status === 'done') {
+                                        $status_class = 'bg-blue-100 text-blue-800';
+                                        $status_text = esc_html__('Hoàn thành', 'direct-image-signature');
+                                    }
+                                    ?>
+                                    <span class="px-3 py-1 rounded-full text-sm <?php echo $status_class; ?>">
+                                        <?php echo $status_text; ?>
                                     </span>
                                    
-                                    <?php if (!empty($list_img)): ?>
+                                    <?php if (!empty($list_img) && $user_status === 'pending'): ?>
                                         <a href="javascript:void(0);" 
                                            class="dis-sign-button inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
                                            data-invoice-id="<?php echo esc_attr($invoice_id); ?>">
@@ -385,45 +609,6 @@ class DIS_Invoice_List_Shortcode {
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                             </svg>
                                             <?php echo esc_html__('Ký', 'direct-image-signature'); ?>
-                                        </a>
-                                        
-                                        <script type="text/javascript">
-                                            jQuery(document).ready(function($) {
-                                                $('.dis-sign-button[data-invoice-id="<?php echo esc_attr($invoice_id); ?>"]').on('click', function() {
-                                                    var images = <?php echo json_encode($list_img); ?>;
-                                                    var imageLinks = [];
-                                                    
-                                                    // Chuẩn bị danh sách ảnh cho Fancybox
-                                                    if (images && images.length > 0) {
-                                                        images.forEach(function(img, index) {
-                                                            imageLinks.push({
-                                                                src: img.url,
-                                                                caption: '<?php echo esc_js(get_the_title()); ?> - <?php echo esc_js(__('Trang', 'direct-image-signature')); ?> ' + (index + 1)
-                                                            });
-                                                        });
-                                                        
-                                                        // Mở Fancybox với danh sách ảnh
-                                                        Fancybox.show(imageLinks, {
-                                                            toolbar: {
-                                                                display: [
-                                                                    "counter",
-                                                                    "close",
-                                                                ]
-                                                            },
-                                                          
-                                                        });
-                                                    } else {
-                                                        alert('<?php echo esc_js(__('Không có ảnh nào cho hóa đơn này', 'direct-image-signature')); ?>');
-                                                    }
-                                                });
-                                            });
-                                        </script>
-                                    <?php else: ?>
-                                        <a href="<?php echo esc_url(get_permalink()); ?>" class="inline-flex items-center text-blue-600 hover:text-blue-700 font-medium text-sm">
-                                            <span><?php echo esc_html__('Xem chi tiết', 'direct-image-signature'); ?></span>
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                            </svg>
                                         </a>
                                     <?php endif; ?>
                                 </div>
@@ -441,9 +626,12 @@ class DIS_Invoice_List_Shortcode {
                     <p class="text-gray-500 mt-2"><?php echo esc_html__('Hóa đơn sẽ xuất hiện ở đây sau khi được tạo.', 'direct-image-signature'); ?></p>
                 </div>
             <?php endif; ?>
+            <?php endif; ?>
         </div>
         <?php
     }
+ 
+    
 }
 
 // Khởi tạo lớp
