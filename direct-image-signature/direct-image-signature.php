@@ -267,6 +267,60 @@ function dis_get_invoice_images() {
 add_action('wp_ajax_dis_get_invoice_images', 'dis_get_invoice_images');
 add_action('wp_ajax_nopriv_dis_get_invoice_images', 'dis_get_invoice_images');
 
+// Hàm gửi mail cho người ký tiếp theo
+function send_invoice_email_to_next_signer($invoice_id, $signed_users, $assigned_signers) {
+   
+
+    // Đảm bảo các mảng là mảng và không rỗng
+    if (!is_array($assigned_signers)) {
+        $assigned_signers = array($assigned_signers);
+    }
+    if (!is_array($signed_users)) {
+        $signed_users = array();
+    }
+    
+    // Loại bỏ các giá trị null hoặc rỗng
+    $assigned_signers = array_filter($assigned_signers);
+    $signed_users = array_filter($signed_users);
+
+    // Tìm người ký tiếp theo trong danh sách theo thứ tự
+    foreach ($assigned_signers as $signer_id) {
+        if (!in_array($signer_id, $signed_users)) {
+            send_invoice_email_to_user($signer_id, $invoice_id);
+            return;
+        }
+    }
+    
+}
+
+// Hàm gửi mail xác nhận cho người vừa ký
+function send_signer_confirmation_email($user_id, $invoice_id) {
+    $user = get_user_by('id', $user_id);
+    if (!$user) return;
+
+    // Lấy nội dung template từ Options Page
+    $subject = get_field('invoice_signed_email_subject', 'option');
+    if (empty($subject)) {
+        $subject = 'Bạn đã hoàn thành việc ký hoá đơn';
+    }
+    
+    $body_template = get_field('invoice_signed_email_body', 'option');
+    if (empty($body_template)) {
+        $body_template = "Xin chào {customer_name},\n\nBạn vừa hoàn tất ký hoá đơn: {invoice_title}.\n\nCảm ơn bạn!";
+    }
+
+    // Thay thế biến
+    $variables = array(
+        '{customer_name}' => $user->display_name,
+        '{invoice_title}' => get_the_title($invoice_id)
+    );
+    $body = strtr($body_template, $variables);
+
+    // Gửi mail
+    $headers = array('Content-Type: text/html; charset=UTF-8');
+    wp_mail($user->user_email, $subject, nl2br($body), $headers);
+}
+
 // Xử lý AJAX để lưu chữ ký
 function dis_save_signatures() {
     // Kiểm tra nonce
@@ -292,7 +346,6 @@ function dis_save_signatures() {
 
     // Lấy danh sách người ký được phân công
     $assigned_signers = get_field('signature', $invoice_id);
-    error_log('DIS: Assigned signers: ' . print_r($assigned_signers, true));
     if (!is_array($assigned_signers)) {
         $assigned_signers = array($assigned_signers);
     }
@@ -314,6 +367,9 @@ function dis_save_signatures() {
     // Thêm người dùng hiện tại vào danh sách đã ký
     if (!in_array($user_id, $signed_users)) {
         $signed_users[] = $user_id;
+        
+        // Gửi mail xác nhận cho người vừa ký
+        send_signer_confirmation_email($user_id, $invoice_id);
     }
 
     // Cập nhật danh sách người đã ký
@@ -331,10 +387,11 @@ function dis_save_signatures() {
     } else {
         // Có nhiều người ký và chưa ký đủ -> signed
         $new_status = 'signed';
+        
+        // Gửi mail cho người ký tiếp theo
+        send_invoice_email_to_next_signer($invoice_id, $signed_users, $assigned_signers);
     }
-    error_log('DIS: New status: ' . $new_status);
-    error_log('DIS: Total signers: ' . $total_signers);
-    error_log('DIS: Total signed: ' . $total_signed);
+  
 
     // Nếu dữ liệu là chuỗi JSON, chuyển đổi thành mảng
     if (is_string($merged_images)) {
@@ -403,14 +460,12 @@ function dis_save_signatures() {
 function save_signature_image($data_url) {
     // Kiểm tra data URL
     if (strpos($data_url, 'data:image/') !== 0) {
-        error_log('DIS: Invalid data URL format');
         return false;
     }
     
     // Tách dữ liệu từ data URL
     $parts = explode(',', $data_url);
     if (count($parts) !== 2) {
-        error_log('DIS: Invalid data URL parts');
         return false;
     }
     
@@ -418,7 +473,6 @@ function save_signature_image($data_url) {
         // Lấy loại file
         preg_match('/data:image\/(.*);base64/', $parts[0], $matches);
         if (empty($matches) || count($matches) < 2) {
-            error_log('DIS: Could not determine image type');
             return false;
         }
         
@@ -427,7 +481,6 @@ function save_signature_image($data_url) {
         // Giải mã dữ liệu base64
         $image_data = base64_decode($parts[1]);
         if (!$image_data) {
-            error_log('DIS: Failed to decode base64 data');
             return false;
         }
         
@@ -440,7 +493,6 @@ function save_signature_image($data_url) {
         $bytes_written = file_put_contents($temp_file, $image_data);
         
         if ($bytes_written === false) {
-            error_log('DIS: Failed to write image file');
             return false;
         }
         
@@ -456,7 +508,6 @@ function save_signature_image($data_url) {
         $attach_id = wp_insert_attachment($attachment, $temp_file);
         
         if (is_wp_error($attach_id)) {
-            error_log('DIS: Failed to create attachment: ' . $attach_id->get_error_message());
             return false;
         }
         
@@ -465,10 +516,8 @@ function save_signature_image($data_url) {
         $attach_data = wp_generate_attachment_metadata($attach_id, $temp_file);
         wp_update_attachment_metadata($attach_id, $attach_data);
         
-        error_log('DIS: Successfully created signature image with ID: ' . $attach_id);
         return $attach_id;
     } catch (Exception $e) {
-        error_log('DIS: Exception while saving signature image: ' . $e->getMessage());
         return false;
     }
 }
@@ -731,4 +780,67 @@ function dis_uninstall() {
         rmdir($acf_json_dir);
     }
 }
-register_uninstall_hook(__FILE__, 'dis_uninstall'); 
+register_uninstall_hook(__FILE__, 'dis_uninstall');
+
+// Hook khi hóa đơn được tạo
+function dis_send_first_signer_email($post_id, $post) {
+    // Chỉ xử lý cho post type dis_invoice và status publish
+    if ($post->post_type !== 'dis_invoice' || $post->post_status !== 'publish') {
+        return;
+    }
+
+    // Kiểm tra xem đã gửi mail chưa để tránh gửi lại
+    $mail_sent = get_post_meta($post_id, '_dis_first_mail_sent', true);
+    if ($mail_sent) {
+        return;
+    }
+
+    // Lấy danh sách người ký được phân công
+    $assigned_signers = get_field('signature', $post_id);
+    if (!is_array($assigned_signers)) {
+        $assigned_signers = array($assigned_signers);
+    }
+    $assigned_signers = array_filter($assigned_signers);
+
+    if (empty($assigned_signers)) {
+        return;
+    }
+    // Nếu có người ký, gửi mail cho người đầu tiên
+    if (!empty($assigned_signers)) {
+        $first_signer = reset($assigned_signers);
+        send_invoice_email_to_user($first_signer, $post_id);
+        
+        // Đánh dấu đã gửi mail
+        update_post_meta($post_id, '_dis_first_mail_sent', true);
+    }
+}
+
+// Thêm hook cho cả khi post được tạo mới và khi update
+add_action('wp_insert_post', 'dis_send_first_signer_email', 10, 2);
+add_action('post_updated', 'dis_send_first_signer_email', 10, 2);
+
+// Hàm gửi mail cho người ký
+function send_invoice_email_to_user($user_id, $invoice_id) {
+    $user = get_user_by('id', $user_id);
+    if (!$user) return;
+
+    // Lấy link trang chủ với tab pending
+    $home_url = home_url('/?tab=pending');
+    
+
+    // Lấy nội dung template từ Options Page
+    $subject = get_field('invoice_email_subject', 'option');
+    $body_template = get_field('invoice_email_body', 'option');
+
+    // Thay thế biến
+    $variables = array(
+        '{customer_name}' => $user->display_name,
+        '{invoice_link}'  => $home_url,
+        '{invoice_title}' => get_the_title($invoice_id)
+    );
+    $body = strtr($body_template, $variables);
+
+    // Gửi mail
+    $headers = array('Content-Type: text/html; charset=UTF-8');
+    wp_mail($user->user_email, $subject, nl2br($body), $headers);
+} 
