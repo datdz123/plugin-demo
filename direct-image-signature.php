@@ -110,6 +110,7 @@ function dis_enqueue_scripts() {
             'try_again_btn' => __('Thử lại', 'direct-image-signature')
         )
     ));
+    wp_enqueue_script('create-invoice-js', DIS_PLUGIN_URL . 'assets/js/create-invoice.js', array('jquery'), DIS_VERSION, true);
 }
 add_action('wp_enqueue_scripts', 'dis_enqueue_scripts');
 
@@ -431,6 +432,36 @@ function dis_save_signatures() {
         wp_send_json_error(array('message' => __('Không thể lưu hình ảnh đã ghép.', 'direct-image-signature')));
         return;
     }
+
+    // Cập nhật danh sách ảnh của hóa đơn với ảnh mới nhất
+    $current_list_img = get_field('list_img', $invoice_id);
+    if (!is_array($current_list_img)) {
+        $current_list_img = array();
+    }
+
+    // Cập nhật từng ảnh đã ký
+    foreach ($signed_images as $index => $image_id) {
+        $image_url = wp_get_attachment_url($image_id);
+        if ($image_url) {
+            // Cập nhật hoặc thêm mới ảnh đã ký
+            if (isset($current_list_img[$index])) {
+                $current_list_img[$index] = array(
+                    'ID' => $image_id,
+                    'url' => $image_url,
+                    'alt' => get_post_meta($image_id, '_wp_attachment_image_alt', true)
+                );
+            } else {
+                $current_list_img[] = array(
+                    'ID' => $image_id,
+                    'url' => $image_url,
+                    'alt' => get_post_meta($image_id, '_wp_attachment_image_alt', true)
+                );
+            }
+        }
+    }
+
+    // Cập nhật lại trường list_img với danh sách ảnh mới
+    update_field('list_img', $current_list_img, $invoice_id);
 
     // Cập nhật trạng thái hóa đơn
     update_post_meta($invoice_id, '_dis_invoice_status', $new_status);
@@ -843,4 +874,89 @@ function send_invoice_email_to_user($user_id, $invoice_id) {
     // Gửi mail
     $headers = array('Content-Type: text/html; charset=UTF-8');
     wp_mail($user->user_email, $subject, nl2br($body), $headers);
-} 
+}
+
+// Xử lý tạo hóa đơn
+function handle_create_invoice() {
+    if (!isset($_POST['create_invoice_nonce']) || !wp_verify_nonce($_POST['create_invoice_nonce'], 'create_invoice_nonce')) {
+        wp_die('Lỗi bảo mật!');
+    }
+
+    if (!is_user_logged_in()) {
+        wp_die('Bạn cần đăng nhập để thực hiện chức năng này!');
+    }
+
+    // Kiểm tra dữ liệu
+    if (empty($_POST['invoice_title'])) {
+        wp_die('Vui lòng nhập tiêu đề hóa đơn!');
+    }
+
+    if (empty($_FILES['invoice_images'])) {
+        wp_die('Vui lòng chọn ít nhất một ảnh hóa đơn!');
+    }
+
+    if (empty($_POST['invoice_signers'])) {
+        wp_die('Vui lòng chọn ít nhất một người ký!');
+    }
+
+    // Tạo hóa đơn mới
+    $invoice_data = array(
+        'post_title'    => sanitize_text_field($_POST['invoice_title']),
+        'post_content'  => sanitize_textarea_field($_POST['invoice_description']),
+        'post_status'   => 'publish',
+        'post_type'     => 'dis_invoice'
+    );
+
+    $invoice_id = wp_insert_post($invoice_data);
+
+    if (is_wp_error($invoice_id)) {
+        wp_die('Không thể tạo hóa đơn. Vui lòng thử lại!');
+    }
+
+    // Xử lý upload ảnh
+    $uploaded_images = array();
+    $files = $_FILES['invoice_images'];
+    
+    foreach ($files['name'] as $key => $value) {
+        if ($files['error'][$key] === 0) {
+            $file = array(
+                'name'     => $files['name'][$key],
+                'type'     => $files['type'][$key],
+                'tmp_name' => $files['tmp_name'][$key],
+                'error'    => $files['error'][$key],
+                'size'     => $files['size'][$key]
+            );
+
+            $_FILES = array('upload_file' => $file);
+            $attachment_id = media_handle_upload('upload_file', $invoice_id);
+
+            if (!is_wp_error($attachment_id)) {
+                $uploaded_images[] = array(
+                    'ID'  => $attachment_id,
+                    'url' => wp_get_attachment_url($attachment_id)
+                );
+            }
+        }
+    }
+
+    // Lưu ảnh vào ACF
+    update_field('list_img', $uploaded_images, $invoice_id);
+
+    // Lưu người ký
+    update_field('signature', $_POST['invoice_signers'], $invoice_id);
+
+    // Lưu trạng thái
+    update_post_meta($invoice_id, '_dis_invoice_status', 'pending');
+
+    // Gửi email cho người ký đầu tiên
+    $first_signer = reset($_POST['invoice_signers']);
+    if ($first_signer) {
+        send_invoice_email_to_user($first_signer, $invoice_id);
+        update_post_meta($invoice_id, '_dis_first_mail_sent', true);
+    }
+
+    // Chuyển hướng về trang danh sách hóa đơn
+    wp_redirect(home_url('/?tab=pending'));
+    exit;
+}
+add_action('admin_post_create_invoice', 'handle_create_invoice'); 
