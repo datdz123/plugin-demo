@@ -1,0 +1,22 @@
+{
+    "key": "ui_options_page_6848e2e129e31",
+    "title": "Cài đặt email",
+    "active": true,
+    "menu_order": 0,
+    "page_title": "Cài đặt email",
+    "menu_slug": "setting-email",
+    "parent_slug": "none",
+    "advanced_configuration": 1,
+    "icon_url": "dashicons-email",
+    "menu_title": "",
+    "position": "",
+    "redirect": 0,
+    "description": "",
+    "update_button": "Update",
+    "updated_message": "Options Updated",
+    "capability": "edit_posts",
+    "data_storage": "options",
+    "post_id": "",
+    "autoload": 0,
+    "modified": 1749607167
+}

@@ -1,0 +1,370 @@
+@charset "UTF-8";
+
+/* Wrapper cho hình ảnh */
+.dis-image-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+/* Icon chữ ký */
+.dis-signature-icon {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    background-color: rgba(255, 255, 255, 0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 9;
+}
+
+.dis-signature-icon:hover {
+    background-color: rgba(255, 255, 255, 0.9);
+    transform: scale(1.1);
+}
+
+.dis-signature-icon img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+/* Container cho công cụ */
+#dis-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 999999;
+}
+
+/* Toolbar */
+.dis-lightbox-toolbar {
+    background-color: rgba(0, 0, 0, 0.7);
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Nút */
+.dis-button {
+    background-color: #333;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dis-button:last-child {
+    margin-right: 0;
+}
+
+.dis-button:hover {
+    background-color: #555;
+}
+
+.dis-button.active {
+    background-color: #007bff;
+    color: white;
+    font-weight: bold;
+}
+
+.dis-primary {
+    background-color: #007bff;
+    color: white;
+    font-weight: bold;
+}
+
+.dis-primary:hover {
+    background-color: #0056b3;
+}
+
+/* Điều khiển kích thước và màu sắc */
+.dis-size-control, .dis-color-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dis-size-control label, .dis-color-control label {
+    color: white;
+    font-size: 14px;
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* Canvas wrapper */
+.dis-lightbox-canvas-wrapper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 999999;
+    pointer-events: none;
+}
+
+.dis-lightbox-canvas-wrapper canvas {
+    pointer-events: auto;
+}
+
+/* Nút lưu */
+.dis-save {
+    background-color: #28a745;
+    color: white;
+    font-weight: bold;
+}
+
+.dis-save:hover {
+    background-color: #218838;
+}
+
+/* Loading */
+.dis-loading {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 999999;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+.dis-spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: dis-spin 1s ease-in-out infinite;
+}
+
+@keyframes dis-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Dialog chung */
+.dis-upload-dialog, .dis-result-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 999999;
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+
+.dis-upload-dialog-content, .dis-result-dialog-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.dis-upload-dialog-content h3, .dis-result-dialog-content h3 {
+    margin-top: 0;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+/* Upload Form */
+.dis-upload-field {
+    margin-bottom: 15px;
+}
+
+.dis-upload-field label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.dis-upload-field input[type="file"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.dis-upload-preview {
+    margin: 15px 0;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+    text-align: center;
+}
+
+.dis-upload-preview img {
+    max-width: 100%;
+    max-height: 200px;
+    border: 1px solid #eee;
+}
+
+.dis-upload-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+/* Hộp thoại kết quả */
+.dis-result-image {
+    margin: 15px 0;
+    text-align: center;
+}
+
+.dis-result-image img {
+    max-width: 100%;
+    max-height: 300px;
+    border: 1px solid #ddd;
+    padding: 5px;
+}
+
+.dis-result-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .dis-lightbox-toolbar {
+        padding: 5px;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .dis-button, .dis-size-control, .dis-color-control {
+        width: 100%;
+        margin: 5px 0;
+    }
+    
+    .dis-upload-dialog-content, .dis-result-dialog-content {
+        width: 90%;
+        padding: 15px;
+    }
+}
+
+/* Đảm bảo hiển thị trên các trang sử dụng z-index cao */
+.fancybox__container {
+    z-index: 9999 !important;
+}
+
+/* Đảm bảo icon hiển thị trên mọi nền */
+.dis-signature-icon::before {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    pointer-events: none;
+}
+
+/* Style cho object chữ ký có thể resize */
+.canvas-container .signature-object {
+    border: 1px dashed transparent;
+}
+
+.canvas-container .signature-object.selected {
+    border: 1px dashed #007bff;
+}
+
+/**
+ * CSS bổ sung cho plugin Direct Image Signature
+ * Sử dụng kết hợp với Tailwind CSS
+ */
+
+/* Nút ký hình ảnh */
+.dis-sign-button {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.wp-block-image:hover .dis-sign-button,
+.wp-caption:hover .dis-sign-button,
+figure:hover .dis-sign-button {
+    opacity: 1;
+}
+
+/* Animate hiệu ứng loading */
+@keyframes dis-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin {
+    animation: dis-spin 1s linear infinite;
+}
+
+/* Tạo hiệu ứng active cho các nút công cụ */
+.dis-button.active {
+    position: relative;
+}
+
+.dis-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40%;
+    height: 2px;
+    background-color: currentColor;
+    border-radius: 2px;
+}
+
+/* Custom cursors */
+.fabric-canvas-drawing {
+    cursor: crosshair !important;
+}
+
+/* Hỗ trợ mobile */
+@media (max-width: 640px) {
+    .dis-lightbox-toolbar {
+        flex-direction: column;
+    }
+    
+    .dis-upload-dialog-content,
+    .dis-result-dialog-content {
+        width: 90%;
+        max-width: none;
+    }
+    
+    #dis-image-canvas {
+        max-height: 70vh;
+    }
+} 
+
+
+.swal2-popup.swal2-modal.\!overflow-visible.swal2-show{
+    width: 800px !important;
+}
